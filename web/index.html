@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wolf Agent v1 Replay</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #151716;
+      --panel: #20231f;
+      --panel-2: #292d27;
+      --line: #3c4238;
+      --text: #f2f0e8;
+      --muted: #aaa89d;
+      --green: #7bc77e;
+      --red: #d96f65;
+      --gold: #d7b969;
+      --blue: #82a9d9;
+      --purple: #b392d6;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    button, input, select {
+      font: inherit;
+      color: inherit;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      background: #191c18;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      font-size: 18px;
+      margin: 0;
+      font-weight: 700;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 280px;
+    }
+
+    input {
+      min-width: 260px;
+      flex: 1;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 9px 10px;
+      border-radius: 6px;
+    }
+
+    button, select {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      padding: 9px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(360px, 1fr) minmax(380px, 520px);
+      gap: 1px;
+      background: var(--line);
+    }
+
+    section {
+      background: var(--bg);
+      min-width: 0;
+    }
+
+    .board {
+      padding: 18px;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 18px;
+    }
+
+    .status {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 70px;
+    }
+
+    .stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .stat strong {
+      font-size: 18px;
+      line-height: 1.2;
+    }
+
+    .players {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .player {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 10px;
+      align-items: center;
+      min-height: 78px;
+    }
+
+    .sprite {
+      width: 36px;
+      height: 36px;
+      image-rendering: pixelated;
+      background:
+        linear-gradient(var(--hair), var(--hair)) 8px 4px / 20px 5px no-repeat,
+        linear-gradient(var(--skin), var(--skin)) 7px 9px / 22px 17px no-repeat,
+        linear-gradient(var(--eye), var(--eye)) 12px 14px / 4px 4px no-repeat,
+        linear-gradient(var(--eye), var(--eye)) 21px 14px / 4px 4px no-repeat,
+        linear-gradient(var(--role), var(--role)) 9px 26px / 18px 8px no-repeat;
+      border: 1px solid #111;
+      background-color: #0d0f0c;
+      transform: scale(1);
+    }
+
+    .dead {
+      opacity: 0.45;
+      filter: grayscale(1);
+    }
+
+    .meta {
+      min-width: 0;
+    }
+
+    .meta b {
+      display: block;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .meta small {
+      display: block;
+      color: var(--muted);
+      margin-top: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .werewolf { --role: var(--red); }
+    .villager { --role: var(--green); }
+    .seer { --role: var(--blue); }
+    .witch { --role: var(--purple); }
+
+    .ENTJ { --hair: #b24b43; }
+    .INTP { --hair: #6f8fb5; }
+    .ESFJ { --hair: #c69b4e; }
+    .INFJ { --hair: #8f76bd; }
+
+    .player { --skin: #d7b38f; --eye: #121212; }
+
+    .channels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    .feed {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-height: 360px;
+      max-height: calc(100vh - 340px);
+      overflow: auto;
+    }
+
+    .feed h2, .timeline h2 {
+      position: sticky;
+      top: 0;
+      background: var(--panel);
+      margin: 0;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      font-size: 14px;
+      z-index: 2;
+    }
+
+    .event {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .event b {
+      color: var(--gold);
+      font-size: 13px;
+    }
+
+    .event p {
+      margin: 6px 0 0;
+      color: var(--text);
+      line-height: 1.45;
+      font-size: 13px;
+      word-break: break-word;
+    }
+
+    .event small {
+      display: block;
+      color: var(--muted);
+      margin-top: 4px;
+      font-size: 12px;
+    }
+
+    .timeline {
+      background: var(--bg);
+      padding: 18px;
+      min-height: 0;
+    }
+
+    .timeline-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      height: calc(100vh - 100px);
+      overflow: auto;
+    }
+
+    .phase {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      cursor: pointer;
+    }
+
+    .phase:hover {
+      background: var(--panel-2);
+    }
+
+    .phase b {
+      display: block;
+      font-size: 13px;
+    }
+
+    .phase small {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .notice {
+      color: var(--muted);
+      padding: 12px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+      .status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .players { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .channels { grid-template-columns: 1fr; }
+      .feed { max-height: none; }
+      .timeline-panel { height: auto; max-height: 520px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Wolf Agent v1 Replay</h1>
+      <div class="toolbar">
+        <input id="path" value="/games/wolf-v1-a3b1799d.events.jsonl" />
+        <button id="load">加载</button>
+        <select id="filter">
+          <option value="all">全部事件</option>
+          <option value="message_posted">只看发言</option>
+          <option value="action_submitted">只看行动</option>
+          <option value="vote_cast">只看投票</option>
+          <option value="player_eliminated">只看死亡</option>
+        </select>
+      </div>
+    </header>
+    <main>
+      <section class="board">
+        <div class="status">
+          <div class="stat"><span>Game</span><strong id="gameId">-</strong></div>
+          <div class="stat"><span>Winner</span><strong id="winner">-</strong></div>
+          <div class="stat"><span>Round</span><strong id="round">-</strong></div>
+          <div class="stat"><span>Events</span><strong id="eventCount">-</strong></div>
+        </div>
+        <div class="players" id="players"></div>
+        <div class="channels">
+          <div class="feed">
+            <h2>公共板</h2>
+            <div id="publicFeed" class="notice">等待加载事件日志。</div>
+          </div>
+          <div class="feed">
+            <h2>狼人密道 / 私密行动</h2>
+            <div id="secretFeed" class="notice">等待加载事件日志。</div>
+          </div>
+        </div>
+      </section>
+      <section class="timeline">
+        <div class="timeline-panel">
+          <h2>时间线</h2>
+          <div id="timeline" class="notice">等待加载事件日志。</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const roleNames = { werewolf: "狼人", villager: "村民", seer: "预言家", witch: "女巫" };
+    const mbti = ["ENTJ", "INTP", "INFJ", "ESFJ", "INTP", "INTP", "ENTJ", "ENTJ", "INFJ"];
+
+    document.getElementById("load").addEventListener("click", loadLog);
+    document.getElementById("filter").addEventListener("change", render);
+
+    let events = [];
+
+    async function loadLog() {
+      const path = document.getElementById("path").value.trim();
+      const res = await fetch(path, { cache: "no-store" });
+      if (!res.ok) throw new Error(`加载失败: ${res.status}`);
+      const text = await res.text();
+      events = text.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+      render();
+    }
+
+    function render() {
+      const filter = document.getElementById("filter").value;
+      const visible = filter === "all" ? events : events.filter(e => e.type === filter);
+      const roles = new Map();
+      const alive = new Set();
+      let gameId = "-";
+      let winner = "-";
+      let round = 0;
+
+      for (const e of events) {
+        if (e.game_id) gameId = e.game_id;
+        if (e.type === "role_assigned") {
+          roles.set(e.from_player, e.metadata.role);
+          alive.add(e.from_player);
+        }
+        if (e.type === "player_eliminated") {
+          alive.delete(e.from_player);
+        }
+        if (e.type === "phase_started" && e.metadata?.round) {
+          round = Math.max(round, e.metadata.round);
+        }
+        if (e.type === "game_ended") {
+          winner = e.metadata?.winner_name || e.metadata?.winner || "-";
+        }
+      }
+
+      document.getElementById("gameId").textContent = gameId;
+      document.getElementById("winner").textContent = winner;
+      document.getElementById("round").textContent = round;
+      document.getElementById("eventCount").textContent = events.length;
+
+      renderPlayers(roles, alive);
+      renderFeeds(visible);
+      renderTimeline(visible);
+    }
+
+    function renderPlayers(roles, alive) {
+      const el = document.getElementById("players");
+      el.innerHTML = "";
+      for (let id = 1; id <= 9; id++) {
+        const role = roles.get(id) || "villager";
+        const type = mbti[id - 1] || "ENTJ";
+        const div = document.createElement("div");
+        div.className = `player ${role} ${type} ${alive.has(id) ? "" : "dead"}`;
+        div.innerHTML = `
+          <div class="sprite"></div>
+          <div class="meta">
+            <b>${id}号 ${type}</b>
+            <small>${roleNames[role] || role} · ${alive.has(id) ? "存活" : "死亡"}</small>
+          </div>
+        `;
+        el.appendChild(div);
+      }
+    }
+
+    function renderFeeds(list) {
+      const publicFeed = document.getElementById("publicFeed");
+      const secretFeed = document.getElementById("secretFeed");
+      publicFeed.innerHTML = "";
+      secretFeed.innerHTML = "";
+
+      for (const e of list) {
+        if (e.type !== "message_posted" && e.type !== "action_submitted" && e.type !== "vote_cast" && e.type !== "player_eliminated") continue;
+        const target = e.channel === "public_board" || e.channel === "announcement" || e.channel === "system" || e.type === "vote_cast"
+          ? publicFeed
+          : secretFeed;
+        target.appendChild(eventNode(e));
+      }
+
+      if (!publicFeed.children.length) publicFeed.textContent = "没有匹配事件。";
+      if (!secretFeed.children.length) secretFeed.textContent = "没有匹配事件。";
+    }
+
+    function renderTimeline(list) {
+      const timeline = document.getElementById("timeline");
+      timeline.innerHTML = "";
+      for (const e of list) {
+        const div = document.createElement("div");
+        div.className = "phase";
+        div.innerHTML = `<b>${label(e)}</b><small>${e.type} · ${e.channel} · ${e.visibility}</small>`;
+        timeline.appendChild(div);
+      }
+      if (!timeline.children.length) timeline.textContent = "没有匹配事件。";
+    }
+
+    function eventNode(e) {
+      const div = document.createElement("div");
+      div.className = "event";
+      div.innerHTML = `
+        <b>${label(e)}</b>
+        <p>${escapeHtml(body(e))}</p>
+        ${e.strategy_summary ? `<small>${escapeHtml(e.strategy_summary)}</small>` : ""}
+      `;
+      return div;
+    }
+
+    function label(e) {
+      if (e.type === "phase_started") return `${e.metadata?.phase || "PHASE"} · 第${e.metadata?.round || "-"}轮`;
+      if (e.type === "role_assigned") return `${e.from_player}号分配身份`;
+      if (e.type === "vote_cast") return `${e.from_player}号投票`;
+      if (e.type === "player_eliminated") return `${e.from_player}号出局`;
+      if (e.type === "action_submitted") return `${e.from_player || "系统"}行动`;
+      if (e.type === "game_ended") return "游戏结束";
+      return `${e.from_player ? `${e.from_player}号` : "系统"} · ${e.channel}`;
+    }
+
+    function body(e) {
+      if (e.content) return e.content;
+      if (e.metadata) return JSON.stringify(e.metadata);
+      return e.type;
+    }
+
+    function escapeHtml(text) {
+      return String(text).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c]));
+    }
+
+    loadLog().catch(err => {
+      document.getElementById("publicFeed").textContent = err.message;
+      document.getElementById("secretFeed").textContent = "请确认已从仓库根目录启动本地服务器。";
+    });
+  </script>
+</body>
+</html>

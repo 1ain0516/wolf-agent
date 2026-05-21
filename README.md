@@ -6,7 +6,6 @@ AI vs AI 狼人杀对局引擎（旁观模式）。
 
 ```bash
 pip install -r requirements.txt
-pip install -r requirements-dev.txt  # 开发依赖（测试）
 
 # 设置 LLM API（DeepSeek 兼容格式）
 set DEEPSEEK_API_KEY=your_key_here
@@ -16,6 +15,9 @@ python -m wolf_agent run_spectate --seed 42
 
 # 跑一局（stub 模式，确定性 mock，无需 key，~1s）
 python -m wolf_agent run_spectate --seed 42 --stub
+
+# 跑测试
+python -m pytest tests/ -v
 ```
 
 ## 输出
