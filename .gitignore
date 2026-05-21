@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.vscode/
+.idea/
+games/*.jsonl
+games/*.json
+.env
+.env.local
