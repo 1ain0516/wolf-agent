@@ -104,16 +104,14 @@ def _log_phase(evtlog: EventLog, phase: str, round_num: int):
 
 def _check_winner_condition(state: dict) -> str | None:
     alive = set(state["alive"])
-    wolves = set(state["_wolves"])
-    seer = state["_seer_id"]
-    witch = state["_witch_id"]
-
-    # Wolf win: wolves >= alive non-wolves
+    wolves = set(state["_wolves"]) & alive  # only alive wolves count
     non_wolves = alive - wolves
-    if len(wolves) >= len(non_wolves):
+
+    # Wolf win: wolves >= non-wolves (dead wolves excluded from count)
+    if wolves and len(wolves) >= len(non_wolves):
         return "werewolf"
 
-    # Villager win: all wolves dead
+    # Villager win: all wolves eliminated
     if not wolves:
         return "villager"
 
@@ -141,8 +139,15 @@ def _dump_summary(state: dict):
 
 def init_game(state: dict) -> dict:
     rng = random.Random(state["seed"])
-    game_id = f"wolf-v1-{rng.getrandbits(32):08x}-{int(time.time())}"
+    game_id = f"wolf-v1-{rng.getrandbits(32):08x}"
     evtlog_path = os.path.join(GAMES_DIR, f"{game_id}.events.jsonl")
+
+    # Remove stale log from previous run (same seed → same game_id)
+    if os.path.exists(evtlog_path):
+        os.remove(evtlog_path)
+    summary_path = evtlog_path.replace(".events.jsonl", ".summary.json")
+    if os.path.exists(summary_path):
+        os.remove(summary_path)
 
     players = []
     used_mbti = []
@@ -186,7 +191,7 @@ def assign_roles(state: dict) -> dict:
         evtlog.append(
             type="role_assigned",
             channel="system",
-            visibility="role_private",
+            visibility=f"role_private:{pid}",
             from_player=pid,
             metadata={"role": role},
         )
@@ -301,12 +306,12 @@ def night_phase(state: dict) -> dict:
         updates["seer_result"] = is_wolf
 
         evtlog.append(
-            type="action_submitted", channel="seer_vision", visibility="role_private",
+            type="action_submitted", channel="seer_vision", visibility=f"role_private:{seer}",
             from_player=seer,
             metadata={"action": "investigate", "target": target, "is_wolf": is_wolf},
         )
         evtlog.append(
-            type="message_posted", channel="seer_vision", visibility="role_private",
+            type="message_posted", channel="seer_vision", visibility=f"role_private:{seer}",
             from_player=seer,
             content=f"你查验了 {target} 号，身份是{'狼人' if is_wolf else '好人'}。",
         )
@@ -334,7 +339,7 @@ def night_phase(state: dict) -> dict:
             updates["witch_antidote_used"] = True
             updates["night_kill_target"] = None  # Saved!
             evtlog.append(
-                type="action_submitted", channel="witch_chamber", visibility="role_private",
+                type="action_submitted", channel="witch_chamber", visibility=f"role_private:{witch}",
                 from_player=witch,
                 metadata={"action": "use_antidote", "target": kill_target},
             )
@@ -345,7 +350,7 @@ def night_phase(state: dict) -> dict:
             updates["witch_poison_used"] = True
             updates["witch_poison_target"] = poison_target
             evtlog.append(
-                type="action_submitted", channel="witch_chamber", visibility="role_private",
+                type="action_submitted", channel="witch_chamber", visibility=f"role_private:{witch}",
                 from_player=witch,
                 metadata={"action": "use_poison", "target": poison_target},
             )
