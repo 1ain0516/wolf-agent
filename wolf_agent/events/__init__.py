@@ -40,17 +40,24 @@ class GameEvent:
 
 
 class EventLog:
-    """Append-only canonical event log."""
+    """Append-only canonical event log. Open multiple times safely — each open appends."""
 
     def __init__(self, game_id: str, path: str):
         self.game_id = game_id
         self.path = path
-        self._counter = 0
         self._devnull = path == os.devnull
         if not self._devnull:
-            self._file = open(path, "w", encoding="utf-8")
+            self._counter = 0
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for _ in f:
+                        self._counter += 1
+            except FileNotFoundError:
+                pass
+            self._file = open(path, "a", encoding="utf-8")
         else:
-            self._file = None  # type: ignore
+            self._counter = 0
+            self._file = None
 
     def _next_id(self) -> str:
         self._counter += 1

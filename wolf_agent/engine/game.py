@@ -218,6 +218,8 @@ def night_phase(state: dict) -> dict:
     _log_phase(evtlog, "NIGHT", updates["round_num"])
     evtlog.close()
 
+    print(f"  {'='*35}\n  【第 {updates['round_num']} 轮 夜晚】\n  {'='*35}")
+
     # Build agents for night actions
     agents = {}
     for p in state["players"]:
@@ -245,6 +247,8 @@ def night_phase(state: dict) -> dict:
     _log_phase(evtlog, "WOLF_DEN", updates["round_num"])
 
     if alive_wolves:
+        print(f"  狼人({', '.join(f'{w}号' for w in alive_wolves)}) 商议中...")
+
         # Wolf den discussion
         if len(alive_wolves) > 1:
             for wid in alive_wolves:
@@ -274,6 +278,7 @@ def night_phase(state: dict) -> dict:
             kill_initiator = wid  # last voter as initiator
 
     if kill_target:
+        print(f"  → 狼人决定杀死 {kill_target} 号")
         evtlog.append(
             type="action_submitted", channel="wolf_den", visibility="wolf_den",
             from_player=kill_initiator,
@@ -284,12 +289,13 @@ def night_phase(state: dict) -> dict:
 
     # --- Seer investigate ---
     seer = state["_seer_id"]
-    if seer and seer in state["alive"] and non_wolves:
+    if seer and seer in state["alive"]:
         agent = agents[seer]
-        # Can investigate any alive player (including wolves, but not self)
         seer_targets = [p for p in state["alive"] if p != seer]
+        print(f"  预言家查验中...", end=" ")
         target = agent.night_investigate(context, seer_targets)
         is_wolf = target in state["_wolves"]
+        print(f"{target} 号是{'狼人' if is_wolf else '好人'}")
         updates["seer_target"] = target
         updates["seer_result"] = is_wolf
 
@@ -318,11 +324,7 @@ def night_phase(state: dict) -> dict:
         can_save = not antidote_used
         can_poison = not poison_used
 
-        # First night: witch knows the kill target and can save self
-        if is_first_night and can_save:
-            # Witch auto-knows who was killed
-            pass
-
+        print(f"  女巫思考中...")
         witch_decision = agent.witch_act(context, kill_target, can_save, can_poison)
         use_antidote = witch_decision.get("use_antidote", False)
         poison_target = witch_decision.get("poison_target")
@@ -387,8 +389,10 @@ def night_phase(state: dict) -> dict:
                     strategy_summary="遗言",
                 )
 
+    death_msg = ", ".join(death_msg_parts) if death_msg_parts else "无人死亡"
+    print(f"  ☀ 天亮了：{death_msg}")
     updates["alive"] = alive
-    updates["last_death"] = ", ".join(death_msg_parts) if death_msg_parts else "无人死亡"
+    updates["last_death"] = death_msg
 
     evtlog.append(
         type="phase_resolved", channel="system", visibility="public",
@@ -409,7 +413,9 @@ def day_phase(state: dict) -> dict:
     updates["debate_round"] = 0
     _log_phase(evtlog, "DAY", state["round_num"])
 
-    # Announce night result
+    print(f"\n  【第 {state['round_num']} 轮 白天】")
+    print(f"  存活: {', '.join(f'{p}号' for p in sorted(state['alive']))}")
+
     evtlog.append(
         type="message_posted", channel="announcement", visibility="public",
         content=f"昨晚 {state['last_death']} 死亡。",
@@ -443,6 +449,7 @@ def day_phase(state: dict) -> dict:
             msg_entry = {"from": pid, "content": content}
             all_messages.append(msg_entry)
 
+            print(f"  [{pid}号] {content[:80]}")
             evtlog.append(
                 type="message_posted", channel="public_board", visibility="public",
                 from_player=pid, content=content,
@@ -463,6 +470,7 @@ def day_phase(state: dict) -> dict:
             msg_entry = {"from": pid, "content": content}
             all_messages.append(msg_entry)
 
+            print(f"  [{pid}号·辩论] {content[:80]}")
             evtlog.append(
                 type="message_posted", channel="public_board", visibility="public",
                 from_player=pid, content=content,
@@ -484,16 +492,24 @@ def vote_phase(state: dict) -> dict:
     updates["phase"] = "VOTE"
     _log_phase(evtlog, "VOTE", state["round_num"])
 
+    print(f"\n  【投票】")
+
     # First round vote
     votes, eliminated = _run_vote(state, llm, evtlog)
 
     # Handle tie: re-vote once
-    if eliminated is None:
+    tie = eliminated is None
+    if tie:
         evtlog.append(
             type="vote_resolved", channel="system", visibility="public",
             metadata={"tie": True, "revote": True},
         )
         votes, eliminated = _run_vote(state, llm, evtlog, revote=True)
+
+    evtlog.append(
+        type="vote_resolved", channel="system", visibility="public",
+        metadata={"tie": False, "eliminated": eliminated},
+    )
 
     updates["votes"] = votes
     updates["eliminated_today"] = eliminated
@@ -558,6 +574,7 @@ def execute_phase(state: dict) -> dict:
     eliminated = state["eliminated_today"]
 
     if eliminated is None:
+        print("  投票结果：平票，无人出局")
         evtlog.append(
             type="message_posted", channel="announcement", visibility="public",
             content="今天平票，无人出局。",
@@ -566,6 +583,7 @@ def execute_phase(state: dict) -> dict:
         return updates
 
     # Eliminate player
+    print(f"  投票结果：{eliminated} 号被投出局")
     alive = list(state["alive"])
     if eliminated in alive:
         alive.remove(eliminated)
@@ -608,6 +626,7 @@ def check_winner(state: dict) -> dict:
 
     if winner:
         winner_name = "狼人" if winner == "werewolf" else "好人"
+        print(f"\n  🏁 {winner_name} 获胜！（{len(state['alive'])} 人存活）")
         evtlog.append(
             type="game_ended", channel="system", visibility="public",
             metadata={"winner": winner, "winner_name": winner_name},
