@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import time
 import uuid
 from typing import Any, Optional
 
@@ -140,7 +141,7 @@ def _dump_summary(state: dict):
 
 def init_game(state: dict) -> dict:
     rng = random.Random(state["seed"])
-    game_id = f"wolf-v1-{rng.getrandbits(32):08x}"
+    game_id = f"wolf-v1-{rng.getrandbits(32):08x}-{int(time.time())}"
     evtlog_path = os.path.join(GAMES_DIR, f"{game_id}.events.jsonl")
 
     players = []
