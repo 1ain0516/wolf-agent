@@ -276,6 +276,22 @@ def cmd_stats(args: argparse.Namespace):
         print(output)
 
 
+def cmd_web(args: argparse.Namespace):
+    """启动 web 界面"""
+    try:
+        from wolf_agent.web import app
+    except ImportError:
+        print("错误: Flask 未安装。请运行: pip install flask", file=sys.stderr)
+        sys.exit(1)
+
+    port = args.port or 5000
+    print(f"\n{'='*50}")
+    print(f"  Wolf Agent v2 — Web 界面")
+    print(f"  访问: http://localhost:{port}")
+    print(f"{'='*50}\n")
+    app.run(debug=False, port=port, host='127.0.0.1')
+
+
 def main():
     parser = argparse.ArgumentParser(description="Wolf Agent v2 — AI vs AI 狼人杀引擎")
     subparsers = parser.add_subparsers(dest="command", help="子命令")
@@ -294,12 +310,18 @@ def main():
     stats_parser.add_argument("--dir", type=str, default="", help="游戏日志目录")
     stats_parser.add_argument("--output", type=str, default="", help="输出文件路径")
 
+    # web
+    web_parser = subparsers.add_parser("web", help="启动 web 界面")
+    web_parser.add_argument("--port", type=int, default=5000, help="端口号")
+
     args = parser.parse_args()
 
     if args.command == "run_spectate":
         cmd_run_spectate(args)
     elif args.command == "stats":
         cmd_stats(args)
+    elif args.command == "web":
+        cmd_web(args)
     else:
         parser.print_help()
         sys.exit(1)

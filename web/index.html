@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Wolf Agent v1 Replay</title>
+  <title>Wolf Agent v2 — 对局回放</title>
   <style>
     :root {
       color-scheme: dark;
@@ -65,16 +65,7 @@
       min-width: 280px;
     }
 
-    input {
-      min-width: 260px;
-      flex: 1;
-      border: 1px solid var(--line);
-      background: var(--panel);
-      padding: 9px 10px;
-      border-radius: 6px;
-    }
-
-    button, select {
+    select {
       border: 1px solid var(--line);
       background: var(--panel-2);
       padding: 9px 12px;
@@ -84,7 +75,7 @@
 
     main {
       display: grid;
-      grid-template-columns: minmax(360px, 1fr) minmax(380px, 520px);
+      grid-template-columns: 280px 1fr;
       gap: 1px;
       background: var(--line);
     }
@@ -94,11 +85,55 @@
       min-width: 0;
     }
 
-    .board {
+    .sidebar {
       padding: 18px;
       display: grid;
-      grid-template-rows: auto auto 1fr;
+      grid-template-rows: auto 1fr;
       gap: 18px;
+      overflow-y: auto;
+      max-height: calc(100vh - 80px);
+    }
+
+    .game-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .game-item {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .game-item:hover {
+      background: var(--panel-2);
+    }
+
+    .game-item.active {
+      border-color: var(--gold);
+      background: var(--panel-2);
+    }
+
+    .game-item b {
+      display: block;
+      color: var(--gold);
+      margin-bottom: 4px;
+    }
+
+    .game-item small {
+      color: var(--muted);
+      display: block;
+    }
+
+    .content {
+      padding: 18px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 18px;
+      overflow-y: auto;
     }
 
     .status {
@@ -112,7 +147,6 @@
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 12px;
-      min-height: 70px;
     }
 
     .stat span {
@@ -127,361 +161,426 @@
       line-height: 1.2;
     }
 
+    .tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 18px;
+    }
+
+    .tab {
+      padding: 10px 16px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .tab.active {
+      border-bottom-color: var(--gold);
+      color: var(--text);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
     .players {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 10px;
+      margin-bottom: 18px;
     }
 
     .player {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 10px;
+      padding: 12px;
       display: grid;
-      grid-template-columns: 42px 1fr;
-      gap: 10px;
-      align-items: center;
-      min-height: 78px;
+      gap: 8px;
     }
 
-    .sprite {
-      width: 36px;
-      height: 36px;
-      image-rendering: pixelated;
-      background:
-        linear-gradient(var(--hair), var(--hair)) 8px 4px / 20px 5px no-repeat,
-        linear-gradient(var(--skin), var(--skin)) 7px 9px / 22px 17px no-repeat,
-        linear-gradient(var(--eye), var(--eye)) 12px 14px / 4px 4px no-repeat,
-        linear-gradient(var(--eye), var(--eye)) 21px 14px / 4px 4px no-repeat,
-        linear-gradient(var(--role), var(--role)) 9px 26px / 18px 8px no-repeat;
-      border: 1px solid #111;
-      background-color: #0d0f0c;
-      transform: scale(1);
-    }
-
-    .dead {
-      opacity: 0.45;
+    .player.dead {
+      opacity: 0.5;
       filter: grayscale(1);
     }
 
-    .meta {
-      min-width: 0;
+    .player-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
-    .meta b {
-      display: block;
+    .player-header b {
       font-size: 14px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
     }
 
-    .meta small {
+    .player-header small {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .personality-bar {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 4px;
+      font-size: 11px;
+    }
+
+    .personality-item {
+      background: var(--panel-2);
+      border-radius: 4px;
+      padding: 4px;
+      text-align: center;
+    }
+
+    .personality-item small {
       display: block;
       color: var(--muted);
-      margin-top: 4px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      margin-bottom: 2px;
     }
 
-    .werewolf { --role: var(--red); }
-    .villager { --role: var(--green); }
-    .seer { --role: var(--blue); }
-    .witch { --role: var(--purple); }
-
-    .ENTJ { --hair: #b24b43; }
-    .INTP { --hair: #6f8fb5; }
-    .ESFJ { --hair: #c69b4e; }
-    .INFJ { --hair: #8f76bd; }
-
-    .player { --skin: #d7b38f; --eye: #121212; }
-
-    .channels {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      min-height: 0;
+    .personality-item strong {
+      display: block;
+      color: var(--text);
     }
 
     .feed {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
-      min-height: 360px;
-      max-height: calc(100vh - 340px);
-      overflow: auto;
-    }
-
-    .feed h2, .timeline h2 {
-      position: sticky;
-      top: 0;
-      background: var(--panel);
-      margin: 0;
+      max-height: 400px;
+      overflow-y: auto;
       padding: 12px;
-      border-bottom: 1px solid var(--line);
-      font-size: 14px;
-      z-index: 2;
     }
 
     .event {
-      padding: 10px 12px;
+      padding: 8px 0;
       border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 13px;
+    }
+
+    .event:last-child {
+      border-bottom: none;
     }
 
     .event b {
       color: var(--gold);
-      font-size: 13px;
-    }
-
-    .event p {
-      margin: 6px 0 0;
-      color: var(--text);
-      line-height: 1.45;
-      font-size: 13px;
-      word-break: break-word;
     }
 
     .event small {
       display: block;
       color: var(--muted);
       margin-top: 4px;
-      font-size: 12px;
     }
 
-    .timeline {
-      background: var(--bg);
-      padding: 18px;
-      min-height: 0;
-    }
-
-    .timeline-panel {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      height: calc(100vh - 100px);
-      overflow: auto;
-    }
-
-    .phase {
-      padding: 10px 12px;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-      cursor: pointer;
-    }
-
-    .phase:hover {
+    .memory {
       background: var(--panel-2);
-    }
-
-    .phase b {
-      display: block;
+      border-left: 3px solid var(--blue);
+      border-radius: 4px;
+      padding: 10px;
+      margin-bottom: 8px;
       font-size: 13px;
     }
 
-    .phase small {
+    .memory small {
       color: var(--muted);
-      font-size: 12px;
+      display: block;
+      margin-top: 4px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .stats-item {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .stats-item h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: var(--gold);
+    }
+
+    .stats-item p {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.6;
     }
 
     .notice {
       color: var(--muted);
       padding: 12px;
-      line-height: 1.5;
+      text-align: center;
     }
 
     @media (max-width: 900px) {
       main { grid-template-columns: 1fr; }
-      .status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .players { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .channels { grid-template-columns: 1fr; }
-      .feed { max-height: none; }
-      .timeline-panel { height: auto; max-height: 520px; }
+      .sidebar { max-height: 200px; }
+      .players { grid-template-columns: repeat(2, 1fr); }
+      .stats-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <div class="app">
     <header>
-      <h1>Wolf Agent v1 Replay</h1>
+      <h1>🐺 Wolf Agent v2</h1>
       <div class="toolbar">
-        <input id="path" value="/games/wolf-v1-a3b1799d.events.jsonl" />
-        <button id="load">加载</button>
-        <select id="filter">
-          <option value="all">全部事件</option>
-          <option value="message_posted">只看发言</option>
-          <option value="action_submitted">只看行动</option>
-          <option value="vote_cast">只看投票</option>
-          <option value="player_eliminated">只看死亡</option>
+        <select id="gameSelect">
+          <option value="">选择对局...</option>
         </select>
       </div>
     </header>
     <main>
-      <section class="board">
-        <div class="status">
-          <div class="stat"><span>Game</span><strong id="gameId">-</strong></div>
-          <div class="stat"><span>Winner</span><strong id="winner">-</strong></div>
-          <div class="stat"><span>Round</span><strong id="round">-</strong></div>
-          <div class="stat"><span>Events</span><strong id="eventCount">-</strong></div>
+      <section class="sidebar">
+        <div>
+          <h3 style="margin: 0 0 8px; font-size: 14px; color: var(--muted);">最近对局</h3>
         </div>
-        <div class="players" id="players"></div>
-        <div class="channels">
-          <div class="feed">
-            <h2>公共板</h2>
-            <div id="publicFeed" class="notice">等待加载事件日志。</div>
-          </div>
-          <div class="feed">
-            <h2>狼人密道 / 私密行动</h2>
-            <div id="secretFeed" class="notice">等待加载事件日志。</div>
-          </div>
-        </div>
+        <div class="game-list" id="gameList"></div>
       </section>
-      <section class="timeline">
-        <div class="timeline-panel">
-          <h2>时间线</h2>
-          <div id="timeline" class="notice">等待加载事件日志。</div>
-        </div>
+      <section class="content" id="content">
+        <div class="notice">选择一个对局开始查看</div>
       </section>
     </main>
   </div>
 
   <script>
     const roleNames = { werewolf: "狼人", villager: "村民", seer: "预言家", witch: "女巫" };
-    const mbti = ["ENTJ", "INTP", "INFJ", "ESFJ", "INTP", "INTP", "ENTJ", "ENTJ", "INFJ"];
+    const roleColors = { werewolf: var(--red), villager: var(--green), seer: var(--blue), witch: var(--purple) };
 
-    document.getElementById("load").addEventListener("click", loadLog);
-    document.getElementById("filter").addEventListener("change", render);
+    let games = [];
+    let currentGame = null;
+    let personalities = {};
 
-    let events = [];
+    async function init() {
+      // 加载人格定义
+      const persRes = await fetch('/api/personalities');
+      personalities = await persRes.json();
 
-    async function loadLog() {
-      const path = document.getElementById("path").value.trim();
-      const res = await fetch(path, { cache: "no-store" });
-      if (!res.ok) throw new Error(`加载失败: ${res.status}`);
-      const text = await res.text();
-      events = text.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
-      render();
+      // 加载对局列表
+      const gamesRes = await fetch('/api/games');
+      games = await gamesRes.json();
+
+      renderGameList();
     }
 
-    function render() {
-      const filter = document.getElementById("filter").value;
-      const visible = filter === "all" ? events : events.filter(e => e.type === filter);
-      const roles = new Map();
-      const alive = new Set();
-      let gameId = "-";
-      let winner = "-";
-      let round = 0;
+    function renderGameList() {
+      const list = document.getElementById('gameList');
+      list.innerHTML = '';
 
-      for (const e of events) {
-        if (e.game_id) gameId = e.game_id;
-        if (e.type === "role_assigned") {
-          roles.set(e.from_player, e.metadata.role);
-          alive.add(e.from_player);
-        }
-        if (e.type === "player_eliminated") {
-          alive.delete(e.from_player);
-        }
-        if (e.type === "phase_started" && e.metadata?.round) {
-          round = Math.max(round, e.metadata.round);
-        }
-        if (e.type === "game_ended") {
-          winner = e.metadata?.winner_name || e.metadata?.winner || "-";
-        }
-      }
-
-      document.getElementById("gameId").textContent = gameId;
-      document.getElementById("winner").textContent = winner;
-      document.getElementById("round").textContent = round;
-      document.getElementById("eventCount").textContent = events.length;
-
-      renderPlayers(roles, alive);
-      renderFeeds(visible);
-      renderTimeline(visible);
-    }
-
-    function renderPlayers(roles, alive) {
-      const el = document.getElementById("players");
-      el.innerHTML = "";
-      for (let id = 1; id <= 9; id++) {
-        const role = roles.get(id) || "villager";
-        const type = mbti[id - 1] || "ENTJ";
-        const div = document.createElement("div");
-        div.className = `player ${role} ${type} ${alive.has(id) ? "" : "dead"}`;
+      for (const game of games) {
+        const div = document.createElement('div');
+        div.className = 'game-item';
         div.innerHTML = `
-          <div class="sprite"></div>
-          <div class="meta">
-            <b>${id}号 ${type}</b>
-            <small>${roleNames[role] || role} · ${alive.has(id) ? "存活" : "死亡"}</small>
+          <b>${game.game_id.substring(0, 12)}...</b>
+          <small>赢家: ${game.winner || '-'}</small>
+          <small>轮数: ${game.rounds || '-'} | 事件: ${game.events || '-'}</small>
+        `;
+        div.addEventListener('click', () => loadGame(game.game_id));
+        list.appendChild(div);
+      }
+    }
+
+    async function loadGame(gameId) {
+      const res = await fetch(`/api/games/${gameId}`);
+      currentGame = await res.json();
+      renderGame();
+    }
+
+    function renderGame() {
+      if (!currentGame) return;
+
+      const content = document.getElementById('content');
+      const { game_id, summary, events, memories, roles, personalities: persos, alive } = currentGame;
+
+      content.innerHTML = `
+        <div class="status">
+          <div class="stat"><span>Game ID</span><strong>${game_id.substring(0, 12)}</strong></div>
+          <div class="stat"><span>赢家</span><strong>${summary?.winner || '-'}</strong></div>
+          <div class="stat"><span>轮数</span><strong>${summary?.rounds || '-'}</strong></div>
+          <div class="stat"><span>事件</span><strong>${events?.length || '-'}</strong></div>
+        </div>
+
+        <div class="tabs">
+          <div class="tab active" onclick="switchTab(this, 'players')">玩家</div>
+          <div class="tab" onclick="switchTab(this, 'events')">事件</div>
+          <div class="tab" onclick="switchTab(this, 'memories')">记忆</div>
+          <div class="tab" onclick="switchTab(this, 'stats')">统计</div>
+        </div>
+
+        <div id="players" class="tab-content active">
+          <div class="players" id="playersGrid"></div>
+        </div>
+
+        <div id="events" class="tab-content">
+          <div class="feed" id="eventsFeed"></div>
+        </div>
+
+        <div id="memories" class="tab-content">
+          <div id="memoriesList"></div>
+        </div>
+
+        <div id="stats" class="tab-content">
+          <div class="stats-grid" id="statsGrid"></div>
+        </div>
+      `;
+
+      renderPlayers(roles, persos, alive);
+      renderEvents(events);
+      renderMemories(memories);
+      renderStats(summary);
+    }
+
+    function renderPlayers(roles, persos, alive) {
+      const grid = document.getElementById('playersGrid');
+      grid.innerHTML = '';
+
+      for (let id = 1; id <= 9; id++) {
+        const role = roles[id] || 'villager';
+        const pers = persos[id] || 'BOSS';
+        const persData = personalities[pers] || {};
+        const isAlive = alive.includes(id);
+
+        const div = document.createElement('div');
+        div.className = `player ${isAlive ? '' : 'dead'}`;
+        div.innerHTML = `
+          <div class="player-header">
+            <b>${id}号 ${pers}</b>
+            <small>${roleNames[role] || role}</small>
+          </div>
+          <small style="color: var(--muted);">${isAlive ? '存活' : '死亡'}</small>
+          <div class="personality-bar">
+            <div class="personality-item">
+              <small>说话</small>
+              <strong>${(persData.talk || 0).toFixed(2)}</strong>
+            </div>
+            <div class="personality-item">
+              <small>攻击</small>
+              <strong>${(persData.aggression || 0).toFixed(2)}</strong>
+            </div>
+            <div class="personality-item">
+              <small>信任</small>
+              <strong>${(persData.trust || 0).toFixed(2)}</strong>
+            </div>
+            <div class="personality-item">
+              <small>谎言</small>
+              <strong>${(persData.lie || 0).toFixed(2)}</strong>
+            </div>
+            <div class="personality-item">
+              <small>独立</small>
+              <strong>${(persData.independence || 0).toFixed(2)}</strong>
+            </div>
           </div>
         `;
-        el.appendChild(div);
+        grid.appendChild(div);
       }
     }
 
-    function renderFeeds(list) {
-      const publicFeed = document.getElementById("publicFeed");
-      const secretFeed = document.getElementById("secretFeed");
-      publicFeed.innerHTML = "";
-      secretFeed.innerHTML = "";
+    function renderEvents(events) {
+      const feed = document.getElementById('eventsFeed');
+      feed.innerHTML = '';
 
-      for (const e of list) {
-        if (e.type !== "message_posted" && e.type !== "action_submitted" && e.type !== "vote_cast" && e.type !== "player_eliminated") continue;
-        const target = e.channel === "public_board" || e.channel === "announcement" || e.channel === "system" || e.type === "vote_cast"
-          ? publicFeed
-          : secretFeed;
-        target.appendChild(eventNode(e));
+      const filtered = events.filter(e =>
+        ['message_posted', 'action_submitted', 'vote_cast', 'player_eliminated'].includes(e.type)
+      );
+
+      for (const e of filtered.slice(-20)) {
+        const div = document.createElement('div');
+        div.className = 'event';
+        div.innerHTML = `
+          <b>${eventLabel(e)}</b>
+          <p>${eventBody(e)}</p>
+          <small>${e.type} · ${e.channel}</small>
+        `;
+        feed.appendChild(div);
       }
 
-      if (!publicFeed.children.length) publicFeed.textContent = "没有匹配事件。";
-      if (!secretFeed.children.length) secretFeed.textContent = "没有匹配事件。";
-    }
-
-    function renderTimeline(list) {
-      const timeline = document.getElementById("timeline");
-      timeline.innerHTML = "";
-      for (const e of list) {
-        const div = document.createElement("div");
-        div.className = "phase";
-        div.innerHTML = `<b>${label(e)}</b><small>${e.type} · ${e.channel} · ${e.visibility}</small>`;
-        timeline.appendChild(div);
+      if (!feed.children.length) {
+        feed.innerHTML = '<div class="notice">没有事件</div>';
       }
-      if (!timeline.children.length) timeline.textContent = "没有匹配事件。";
     }
 
-    function eventNode(e) {
-      const div = document.createElement("div");
-      div.className = "event";
-      div.innerHTML = `
-        <b>${label(e)}</b>
-        <p>${escapeHtml(body(e))}</p>
-        ${e.strategy_summary ? `<small>${escapeHtml(e.strategy_summary)}</small>` : ""}
-      `;
-      return div;
+    function renderMemories(memories) {
+      const list = document.getElementById('memoriesList');
+      list.innerHTML = '';
+
+      if (!memories || memories.length === 0) {
+        list.innerHTML = '<div class="notice">没有记忆数据</div>';
+        return;
+      }
+
+      for (const mem of memories.slice(0, 10)) {
+        const div = document.createElement('div');
+        div.className = 'memory';
+        div.innerHTML = `
+          <b>${mem.player_id}号 ${mem.personality || '-'}</b>
+          <p>${mem.reflection || mem.content || '-'}</p>
+          <small>strength: ${(mem.strength || 0).toFixed(2)}</small>
+        `;
+        list.appendChild(div);
+      }
     }
 
-    function label(e) {
-      if (e.type === "phase_started") return `${e.metadata?.phase || "PHASE"} · 第${e.metadata?.round || "-"}轮`;
-      if (e.type === "role_assigned") return `${e.from_player}号分配身份`;
-      if (e.type === "vote_cast") return `${e.from_player}号投票`;
-      if (e.type === "player_eliminated") return `${e.from_player}号出局`;
-      if (e.type === "action_submitted") return `${e.from_player || "系统"}行动`;
-      if (e.type === "game_ended") return "游戏结束";
-      return `${e.from_player ? `${e.from_player}号` : "系统"} · ${e.channel}`;
+    function renderStats(summary) {
+      const grid = document.getElementById('statsGrid');
+      grid.innerHTML = '';
+
+      if (!summary) {
+        grid.innerHTML = '<div class="notice">没有统计数据</div>';
+        return;
+      }
+
+      const items = [
+        { title: '对局时长', value: `${summary.duration || '-'}s` },
+        { title: '总事件数', value: summary.event_count || '-' },
+        { title: '平均轮数', value: summary.rounds || '-' },
+        { title: '赢家阵营', value: summary.winner_team || '-' },
+      ];
+
+      for (const item of items) {
+        const div = document.createElement('div');
+        div.className = 'stats-item';
+        div.innerHTML = `<h3>${item.title}</h3><p>${item.value}</p>`;
+        grid.appendChild(div);
+      }
     }
 
-    function body(e) {
-      if (e.content) return e.content;
-      if (e.metadata) return JSON.stringify(e.metadata);
+    function eventLabel(e) {
+      if (e.type === 'message_posted') return `${e.from_player}号发言`;
+      if (e.type === 'action_submitted') return `${e.from_player}号行动`;
+      if (e.type === 'vote_cast') return `${e.from_player}号投票给${e.to_player}号`;
+      if (e.type === 'player_eliminated') return `${e.from_player}号出局`;
       return e.type;
     }
 
-    function escapeHtml(text) {
-      return String(text).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c]));
+    function eventBody(e) {
+      if (e.content) return e.content;
+      if (e.metadata) return JSON.stringify(e.metadata).substring(0, 100);
+      return '-';
     }
 
-    loadLog().catch(err => {
-      document.getElementById("publicFeed").textContent = err.message;
-      document.getElementById("secretFeed").textContent = "请确认已从仓库根目录启动本地服务器。";
+    function switchTab(el, tabId) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      el.classList.add('active');
+      document.getElementById(tabId).classList.add('active');
+    }
+
+    init().catch(err => {
+      console.error(err);
+      document.getElementById('content').innerHTML = `<div class="notice">加载失败: ${err.message}</div>`;
     });
   </script>
 </body>
