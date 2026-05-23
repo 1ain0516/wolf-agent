@@ -382,11 +382,14 @@ createApp({
         this.runErrors = s.errors || [];
 
         if (s.status === 'completed' || s.status === 'partial_success' || s.status === 'failed') {
-          this.isRunning = false;
-          if (this.allResults.length > 0) {
-            await this.loadSavedGames();
-            this.openReplay(this.allResults[0].game_id);
-          }
+          // 最小显示 loading 2 秒，避免一闪而过
+          setTimeout(async () => {
+            this.isRunning = false;
+            if (this.allResults.length > 0) {
+              await this.loadSavedGames();
+              this.openReplay(this.allResults[0].game_id);
+            }
+          }, 2000);
         } else {
           this.pollTimer = setTimeout(() => this.pollRun(), this.runMode === 'real' ? 2000 : 500);
         }
