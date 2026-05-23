@@ -377,6 +377,23 @@
               <div class="message-personality">{{ msg.personality }}</div>
             </div>
           </div>
+
+          <!-- P1: 投票结果 -->
+          <div v-if="voteResult && selectedScene === 'day'">
+            <div style="font-weight: 600; margin-top: 16px; margin-bottom: 8px; font-size: 12px; color: #d7b969;">
+              📊 投票结果
+            </div>
+            <div style="background: #1a1f3a; border-radius: 6px; padding: 10px; font-size: 12px;">
+              <div v-if="voteResult.eliminated">
+                <strong>出局:</strong> {{ voteResult.eliminated }}号
+              </div>
+              <div v-if="voteResult.votes" style="margin-top: 8px; color: #aaa89d;">
+                <div v-for="(count, player) in voteResult.votes" :key="player" style="font-size: 11px;">
+                  {{ player }}号: {{ count }} 票
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -399,6 +416,8 @@
           currentEvents: [],           // 所有事件
           filteredEvents: [],          // 当前场景的事件
           currentMessages: [],
+          currentSpeaker: null,        // 当前发言人（P1 新增）
+          voteResult: null,            // 投票结果（P1 新增）
           socket: null,
           roleNames: {
             'werewolf': '🐺 狼人',
@@ -486,6 +505,25 @@
               content: e.content,
               personality: this.personalityNames[this.gameState.personalities[e.from_player]] || 'UNKNOWN',
             }));
+          
+          // P1: 推导当前发言人（最后一条 message_posted）
+          const lastMessage = this.filteredEvents
+            .filter(e => e.type === 'message_posted')
+            .pop();
+          this.currentSpeaker = lastMessage ? lastMessage.from_player : null;
+          
+          // P1: 推导投票结果
+          const voteResolved = this.filteredEvents
+            .filter(e => e.type === 'vote_resolved')
+            .pop();
+          if (voteResolved) {
+            this.voteResult = {
+              eliminated: voteResolved.metadata?.eliminated_player,
+              votes: voteResolved.metadata?.vote_counts || {},
+            };
+          } else {
+            this.voteResult = null;
+          }
         },
         drawGame() {
           const canvas = this.$refs.gameCanvas;
@@ -574,6 +612,15 @@
             ctx.beginPath();
             ctx.moveTo(x + size / 2, y - size / 2);
             ctx.lineTo(x - size / 2, y + size / 2);
+            ctx.stroke();
+          }
+          
+          // P1: 当前发言人高亮圈
+          if (this.currentSpeaker === player.id) {
+            ctx.strokeStyle = '#d7b969';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(x, y, size / 2 + 6, 0, Math.PI * 2);
             ctx.stroke();
           }
         },
