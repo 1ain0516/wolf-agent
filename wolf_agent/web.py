@@ -15,7 +15,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 import os
 _web_py_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_web_py_dir)
-GAMES_DIR = Path(_project_root) / 'games'
+GAMES_DIR = Path(os.path.join(_project_root, 'games'))
 
 # Phase 映射：day/night -> 具体阶段列表
 PHASE_MAPPING = {
