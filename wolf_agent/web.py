@@ -140,7 +140,7 @@ def build_replay_data(game_id):
     if 'players' in summary:
         for p in summary['players']:
             pid = p['id']
-            player_memories = [m for m in memories if m.get('player_id') == str(pid)]
+            player_memories = [m for m in memories if m.get('player_id') == pid]
             players.append({
                 'id': pid,
                 'personality': p.get('personality'),
@@ -171,7 +171,7 @@ def build_replay_data(game_id):
                 'player_id': e.get('from_player'),
                 'role': 'werewolf',
                 'content': e.get('content'),
-                'strategy_summary': e.get('metadata', {}).get('strategy_summary'),
+                'strategy_summary': (e.get('strategy_summary') or (e.get('metadata', {}) or {}).get('strategy_summary', '')),
             })
         elif e['type'] == 'action_submitted' and e.get('metadata', {}).get('action') == 'kill':
             current_data['night']['kill_target'] = e['metadata'].get('target')
@@ -200,7 +200,7 @@ def build_replay_data(game_id):
                     'role': summary.get('roles', {}).get(str(e.get('from_player'))),
                     'personality': p_pers,
                     'content': e.get('content'),
-                    'strategy_summary': e.get('metadata', {}).get('strategy_summary'),
+                    'strategy_summary': (e.get('strategy_summary') or (e.get('metadata', {}) or {}).get('strategy_summary', '')),
                 })
         elif e['type'] == 'vote_cast':
             current_data['day'].setdefault('votes', []).append({
