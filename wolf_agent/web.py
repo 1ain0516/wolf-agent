@@ -7,6 +7,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_socketio import SocketIO, emit, join_room
 from datetime import datetime
 import threading
+import io
 import time
 
 app = Flask(__name__, static_folder='../web', static_url_path='/static')
@@ -15,6 +16,19 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 # 路径配置
 _web_py_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_web_py_dir)
+
+class LiveStream(io.StringIO):
+    """实时捕获 stdout，写入时同步更新 run 数据中的 live_output"""
+    def __init__(self, run_id):
+        super().__init__()
+        self._run_id = run_id
+
+    def write(self, s):
+        ret = super().write(s)
+        with RUNS_LOCK:
+            if self._run_id in RUNS:
+                RUNS[self._run_id]['live_output'] = self.getvalue()
+        return ret
 GAMES_DIR = Path(os.path.join(_project_root, 'games'))
 
 # Run job 内存存储
@@ -213,7 +227,7 @@ def build_replay_data(game_id):
 
 def run_batch_games(run_id, batch_size, mode, memory_enabled, seed_mode, base_seed):
     """后台线程运行批量游戏，捕获实时输出"""
-    import sys, io
+    import sys
     from wolf_agent.engine.game import default_state, _build_and_run
     from wolf_agent.engine import game as game_module
 
@@ -229,8 +243,8 @@ def run_batch_games(run_id, batch_size, mode, memory_enabled, seed_mode, base_se
             game_module.LLMClient = StubLLM
 
         for i in range(batch_size):
-            # 每局游戏捕获 stdout 到 StringIO
-            live_buf = io.StringIO()
+            # 每局游戏用 LiveStream 实时捕获 stdout
+            live_buf = LiveStream(run_id)
             old_stdout = sys.stdout
             sys.stdout = live_buf
 
@@ -262,7 +276,8 @@ def run_batch_games(run_id, batch_size, mode, memory_enabled, seed_mode, base_se
                     RUNS[run_id]['results'].append(result)
                     RUNS[run_id]['completed'] += 1
                     RUNS[run_id]['current_index'] = i + 1
-                    RUNS[run_id]['live_output'] = live_output
+                # 完成后清空 live_output 避免显示旧数据
+                result['live_output'] = live_output
 
             except Exception as e:
                 with RUNS_LOCK:
@@ -385,17 +400,23 @@ def get_run(run_id):
 
 @app.route('/api/runs/<run_id>/live', methods=['GET'])
 def get_run_live(run_id):
-    """获取当前游戏的实时输出"""
+    """获取当前游戏的实时输出。run 完成后自动清掉旧数据。"""
     with RUNS_LOCK:
         if run_id not in RUNS:
             return jsonify({'error': 'Run not found'}), 404
+        rdata = RUNS[run_id]
+        out = rdata.get('live_output', '')
+        # 完成后清掉旧输出，只保留在 results 里
+        if rdata['status'] in ('completed', 'partial_success', 'failed') and rdata.get('live_output'):
+            # 不在这里清，保留最后一次输出供前端过渡
+            pass
         return jsonify({
             'run_id': run_id,
-            'status': RUNS[run_id]['status'],
-            'current_index': RUNS[run_id]['current_index'],
-            'completed': RUNS[run_id]['completed'],
-            'failed': RUNS[run_id]['failed'],
-            'live_output': RUNS[run_id].get('live_output', ''),
+            'status': rdata['status'],
+            'current_index': rdata['current_index'],
+            'completed': rdata['completed'],
+            'failed': rdata['failed'],
+            'live_output': out,
         })
 
 # ======================================================================
