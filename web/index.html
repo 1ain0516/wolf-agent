@@ -150,15 +150,30 @@ canvas { flex:1; display:block; }
 
     <!-- 中间舞台 -->
     <div class="center-stage">
-      <div v-if="isRunning && liveOutput" style="flex:1;overflow-y:auto;font-family:monospace;font-size:12px;padding:16px;white-space:pre-wrap;color:#aaa;" ref="livePanel">
-        {{ liveOutput }}
-      </div>
-      <canvas v-else-if="replayData" ref="gameCanvas" :width="canvasW" :height="canvasH"></canvas>
+      <canvas v-if="(isRunning && livePlayers.length > 0) || replayData" ref="gameCanvas" :width="canvasW" :height="canvasH"></canvas>
       <div v-else class="empty-state">点击"开始游戏"运行对局，或从左侧选择已保存的对局</div>
     </div>
 
-    <!-- 右侧面板 -->
-    <div class="right-panel" v-if="replayData">
+    <!-- 右侧面板：运行中显示实时消息，回放时显示结构化面板 -->
+    <div class="right-panel" v-if="replayData || (isRunning && livePlayers.length > 0)">
+      <!-- 实时运行：简化的消息流 -->
+      <template v-if="isRunning && liveEvents.length > 0">
+        <div class="scene-tabs">
+          <div class="scene-tab active">📡 实时</div>
+        </div>
+        <div class="panel-content">
+          <div v-for="(m, idx) in liveEvents.slice(-20)" :key="idx" class="msg-item">
+            <div class="msg-header">
+              <span class="msg-speaker">{{ m.player_id }}号</span>
+              <span class="msg-badge" :class="'badge-'+getRoleClass(m.role)">{{ roleNames[m.role] || '?' }}</span>
+              <span class="msg-badge" style="background:#b392d6;color:#fff;">{{ getPlayerPers(m.player_id) }}</span>
+            </div>
+            <div class="msg-content">{{ m.content }}</div>
+          </div>
+        </div>
+      </template>
+      <!-- 回放模式 -->
+      <template v-else>
       <div class="scene-tabs">
         <div class="scene-tab" :class="{active:scene==='day'}" @click="scene='day'">☀️ 白天</div>
         <div class="scene-tab" :class="{active:scene==='night'}" @click="scene='night'">🌙 夜晚</div>
@@ -231,6 +246,7 @@ canvas { flex:1; display:block; }
           </div>
         </div>
       </div>
+      </template>
     </div>
   </div>
 
@@ -292,7 +308,7 @@ createApp({
       showSettings: false,
       settings: { batchSize:3, mode:'stub', seedMode:'random', baseSeed:42, memoryEnabled:false, costConfirmed:false },
       runMode: 'stub',
-      isRunning: false, runId: null, runTotal:0, runCompleted:0, runPct:0, runStatus:'', runErrors:[], liveOutput:'',
+      isRunning: false, runId: null, runTotal:0, runCompleted:0, runPct:0, runStatus:'', runErrors:[], livePlayers:[], liveEvents:[],
       allResults: [],
       savedGames: [],
       selectedGameId: null,
@@ -377,17 +393,32 @@ createApp({
         this.runPct = Math.round((this.runCompleted / s.total) * 100);
         this.allResults = s.results || [];
         this.runErrors = s.errors || [];
-        this.liveOutput = live.live_output || '';
 
-        // 自动滚动实时输出
-        this.$nextTick(() => {
-          const panel = this.$refs.livePanel;
-          if (panel) panel.scrollTop = panel.scrollHeight;
-        });
+        // 实时棋盘：收到玩家数据时画棋盘
+        if (live.players && live.players.length > 0) {
+          this.livePlayers = live.players;
+          // 构建简化的 replayData 供 canvas 使用
+          if (!this.replayData) {
+            this.replayData = { players: live.players, rounds: [], winner: null };
+          } else {
+            this.replayData.players = live.players;
+          }
+          this.$nextTick(() => this.drawBoard());
+        }
+
+        // 实时消息
+        if (live.events && live.events.length > 0) {
+          this.liveEvents = live.events.filter(e => e.type === 'message_posted').map(e => ({
+            player_id: e.from_player,
+            content: e.content,
+            role: this.livePlayers.find(p => p.id === e.from_player)?.role || 'villager',
+          }));
+        }
 
         if (s.status === 'completed' || s.status === 'partial_success' || s.status === 'failed') {
           this.isRunning = false;
-          this.liveOutput = '';
+          this.livePlayers = [];
+          this.liveEvents = [];
           if (this.allResults.length > 0) {
             await this.loadSavedGames();
             this.openReplay(this.allResults[0].game_id);
@@ -416,7 +447,8 @@ createApp({
       if (!canvas || !this.replayData) return;
       const ctx = canvas.getContext('2d');
       const w = canvas.width, h = canvas.height;
-      ctx.fillStyle = this.scene === 'night' ? '#1a1a2e' : '#e8d5b7';
+      const isLive = this.isRunning;
+      ctx.fillStyle = isLive ? '#0a0e27' : (this.scene === 'night' ? '#1a1a2e' : '#e8d5b7');
       ctx.fillRect(0, 0, w, h);
 
       const players = this.replayData.players;
@@ -432,15 +464,16 @@ createApp({
 
     drawPlayer(ctx, x, y, player) {
       const size = 28;
+      const isLive = this.isRunning;
       const isNight = this.scene === 'night';
       const roleColors = { werewolf:'#d96f65', seer:'#82a9d9', witch:'#b392d6', villager:'#7bc77e' };
 
       // 身体
-      ctx.fillStyle = isNight ? '#4a5568' : '#d4a574';
+      ctx.fillStyle = isLive ? '#3c3c5c' : (isNight ? '#4a5568' : '#d4a574');
       ctx.fillRect(x - size/2, y - size/2, size, size);
 
       // 头
-      ctx.fillStyle = isNight ? '#6b7280' : '#e8d5b7';
+      ctx.fillStyle = isLive ? '#5a5a7a' : (isNight ? '#6b7280' : '#e8d5b7');
       ctx.beginPath(); ctx.arc(x, y - size/2 - 10, 9, 0, Math.PI*2); ctx.fill();
 
       // 狼耳朵
@@ -476,7 +509,7 @@ createApp({
 
       // 人格标签（底部）
       const persName = this.personalityNames[player.personality] || player.personality || '?';
-      ctx.fillStyle = this.scene === 'night' ? '#aaa89d' : '#5a4a3a';
+      ctx.fillStyle = this.isRunning ? '#b392d6' : (this.scene === 'night' ? '#aaa89d' : '#5a4a3a');
       ctx.font = '9px sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       ctx.fillText(persName, x, y + size/2 + 6);
