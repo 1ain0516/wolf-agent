@@ -1,6 +1,7 @@
-"""Web 界面 — 对局回放 + 实时观测（v2.1-alpha）"""
+"""Web 界面 — v2.2-alpha 游戏验证页（run job + 回放）"""
 import json
 import os
+import uuid
 from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 from flask_socketio import SocketIO, emit, join_room
@@ -11,11 +12,14 @@ import time
 app = Flask(__name__, static_folder='../web', static_url_path='')
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# 使用绝对路径确保无论从哪个目录启动都能找到 games 目录
-import os
+# 路径配置
 _web_py_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_web_py_dir)
 GAMES_DIR = Path(os.path.join(_project_root, 'games'))
+
+# Run job 内存存储
+RUNS = {}
+RUNS_LOCK = threading.Lock()
 
 # Phase 映射：day/night -> 具体阶段列表
 PHASE_MAPPING = {
@@ -120,6 +124,164 @@ def get_phase_events(events, phase_type):
 
     return filtered
 
+def build_replay_data(game_id):
+    """构建回放数据结构：按轮次分组 day/night 事件"""
+    events = load_events(game_id)
+    summary = load_summary(game_id)
+    memories = load_memories(game_id)
+
+    if not events or not summary:
+        return None
+
+    # 提取玩家信息
+    players = []
+    if 'players' in summary:
+        for p in summary['players']:
+            pid = p['id']
+            player_memories = [m for m in memories if m.get('player_id') == str(pid)]
+            players.append({
+                'id': pid,
+                'personality': p.get('personality'),
+                'role': p.get('role'),
+                'alive': p.get('alive', True),
+                'memory': player_memories[0] if player_memories else None,
+            })
+
+    # 按轮次组织事件
+    rounds = []
+    current_round = 0
+    current_data = {'round': 0, 'night': {}, 'day': {}}
+
+    for e in events:
+        # 检测轮次变更
+        if e['type'] == 'phase_started':
+            round_num = e['metadata'].get('round', 0)
+            if round_num != current_round:
+                if current_round > 0:
+                    rounds.append(current_data)
+                current_round = round_num
+                current_data = {'round': round_num, 'night': {}, 'day': {}}
+
+        # 夜晚事件
+        if e['type'] == 'message_posted' and e.get('channel') == 'wolf_den':
+            current_data['night'].setdefault('messages', []).append({
+                'event_id': e.get('event_id'),
+                'player_id': e.get('from_player'),
+                'content': e.get('content'),
+                'strategy_summary': e.get('metadata', {}).get('strategy_summary'),
+            })
+        elif e['type'] == 'action_submitted' and e.get('metadata', {}).get('action') == 'kill':
+            current_data['night']['kill_target'] = e['metadata'].get('target')
+        elif e['type'] == 'player_eliminated' and e.get('metadata', {}).get('cause') == 'night_kill':
+            current_data['night'].setdefault('deaths', []).append(e.get('from_player'))
+
+        # 白天事件
+        if e['type'] == 'message_posted' and e.get('channel') in ('announcement', 'public_board', 'last_will'):
+            if e['channel'] == 'announcement':
+                current_data['day'].setdefault('announcements', []).append(e.get('content'))
+            else:
+                current_data['day'].setdefault('messages', []).append({
+                    'event_id': e.get('event_id'),
+                    'player_id': e.get('from_player'),
+                    'role': summary.get('roles', {}).get(str(e.get('from_player'))),
+                    'content': e.get('content'),
+                    'strategy_summary': e.get('metadata', {}).get('strategy_summary'),
+                })
+        elif e['type'] == 'vote_cast':
+            current_data['day'].setdefault('votes', []).append({
+                'voter': e.get('from_player'),
+                'target': e.get('metadata', {}).get('target'),
+            })
+        elif e['type'] == 'vote_resolved':
+            current_data['day']['vote_result'] = {
+                'eliminated': e.get('metadata', {}).get('eliminated_player'),
+                'tie': e.get('metadata', {}).get('tie', False),
+                'counts': e.get('metadata', {}).get('vote_counts', {}),
+            }
+
+    if current_round > 0:
+        rounds.append(current_data)
+
+    return {
+        'game_id': game_id,
+        'seed': summary.get('seed'),
+        'winner': summary.get('winner'),
+        'rounds': rounds,
+        'players': players,
+        'memory_enabled': len(memories) > 0,
+    }
+
+def run_batch_games(run_id, batch_size, mode, memory_enabled, seed_mode, base_seed):
+    """后台线程运行批量游戏"""
+    from wolf_agent.engine.game import default_state, _build_and_run
+    from wolf_agent.engine import game as game_module
+
+    # P1-3: 保存原始 LLMClient 并在 finally 中恢复
+    original_llm = game_module.LLMClient
+
+    try:
+        # 设置 stub 模式
+        if mode == 'stub':
+            from wolf_agent.cli.main import StubLLM
+            game_module.LLMClient = StubLLM
+
+        for i in range(batch_size):
+            try:
+                seed = base_seed + i if seed_mode == 'fixed' else int(time.time() * 1000) % 100000 + i
+
+                initial = default_state(seed)
+                initial["_no_memory"] = not memory_enabled
+                initial["_player_memories"] = {}
+
+                final_state = _build_and_run(initial)
+
+                game_id = final_state.get('game_id')
+                events = load_events(game_id)
+                summary = load_summary(game_id)
+
+                result = {
+                    'game_id': game_id,
+                    'seed': seed,
+                    'winner': final_state.get('winner'),
+                    'rounds': final_state.get('round_num', 0),
+                    'event_count': len(events) if events else 0,
+                    'memory_count': len(load_memories(game_id)),
+                }
+
+                with RUNS_LOCK:
+                    RUNS[run_id]['results'].append(result)
+                    RUNS[run_id]['completed'] += 1
+                    RUNS[run_id]['current_index'] = i + 1
+
+            except Exception as e:
+                with RUNS_LOCK:
+                    RUNS[run_id]['failed'] += 1
+                    RUNS[run_id]['errors'].append({
+                        'game_index': i,
+                        'seed': base_seed + i if seed_mode == 'fixed' else None,
+                        'error': str(e),
+                    })
+                    RUNS[run_id]['current_index'] = i + 1
+
+        # 最终状态
+        with RUNS_LOCK:
+            if RUNS[run_id]['failed'] == 0:
+                RUNS[run_id]['status'] = 'completed'
+            elif RUNS[run_id]['completed'] > 0:
+                RUNS[run_id]['status'] = 'partial_success'
+            else:
+                RUNS[run_id]['status'] = 'failed'
+            RUNS[run_id]['finished_at'] = datetime.utcnow().isoformat() + 'Z'
+
+    except Exception as e:
+        with RUNS_LOCK:
+            RUNS[run_id]['status'] = 'failed'
+            RUNS[run_id]['finished_at'] = datetime.utcnow().isoformat() + 'Z'
+            RUNS[run_id]['errors'].append({'error': str(e)})
+    finally:
+        # P1-3: 恢复原始 LLMClient
+        game_module.LLMClient = original_llm
+
 @app.route('/api/debug')
 def debug():
     """调试端点"""
@@ -128,6 +290,102 @@ def debug():
         'GAMES_DIR.exists()': GAMES_DIR.exists(),
         'files': [f.name for f in GAMES_DIR.glob('*.events.jsonl')] if GAMES_DIR.exists() else [],
     })
+
+# ======================================================================
+# v2.2 Run Job API
+# ======================================================================
+
+@app.route('/api/runs', methods=['POST'])
+def create_run():
+    """创建 run job"""
+    data = request.get_json() or {}
+    mode = data.get('mode', 'stub')
+    batch_size = data.get('batch_size', 1)
+    memory_enabled = data.get('memory_enabled', False)
+    seed_mode = data.get('seed_mode', 'random')
+    base_seed = data.get('base_seed')
+
+    # 验证
+    if mode not in ('stub', 'real'):
+        return jsonify({'error': 'Mode must be stub or real'}), 400
+    if mode == 'stub' and not (1 <= batch_size <= 50):
+        return jsonify({'error': 'Stub mode batch_size must be 1-50'}), 400
+    if mode == 'real' and not (1 <= batch_size <= 5):
+        return jsonify({'error': 'Real mode batch_size must be 1-5'}), 400
+    if seed_mode not in ('random', 'fixed'):
+        return jsonify({'error': 'seed_mode must be random or fixed'}), 400
+    if seed_mode == 'fixed' and not isinstance(base_seed, int):
+        return jsonify({'error': 'base_seed must be integer when seed_mode is fixed'}), 400
+
+    # 检查活跃 run
+    with RUNS_LOCK:
+        for rid, rdata in RUNS.items():
+            if rdata['status'] in ('queued', 'running'):
+                return jsonify({'error': 'Another run is already active'}), 409
+
+        run_id = f"run-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+        if seed_mode == 'fixed':
+            base_seed_val = base_seed
+        else:
+            import random as _random
+            base_seed_val = _random.randint(1, 99999)
+
+        RUNS[run_id] = {
+            'run_id': run_id,
+            'status': 'queued',
+            'mode': mode,
+            'total': batch_size,
+            'completed': 0,
+            'failed': 0,
+            'current_index': 0,
+            'started_at': None,
+            'finished_at': None,
+            'results': [],
+            'errors': [],
+        }
+
+    # 启动后台线程
+    t = threading.Thread(
+        target=run_batch_games,
+        args=(run_id, batch_size, mode, memory_enabled, seed_mode, base_seed_val),
+        daemon=True,
+    )
+    t.start()
+
+    return jsonify({
+        'run_id': run_id,
+        'status': 'queued',
+        'total': batch_size,
+        'completed': 0,
+        'failed': 0,
+        'results': [],
+        'errors': [],
+    }), 201
+
+@app.route('/api/runs/<run_id>', methods=['GET'])
+def get_run(run_id):
+    """获取 run 状态"""
+    with RUNS_LOCK:
+        if run_id not in RUNS:
+            return jsonify({'error': 'Run not found'}), 404
+        rdata = dict(RUNS[run_id])
+    return jsonify(rdata)
+
+# ======================================================================
+# v2.2 Replay API
+# ======================================================================
+
+@app.route('/api/games/<game_id>/replay')
+def get_replay(game_id):
+    """获取对局回放数据"""
+    data = build_replay_data(game_id)
+    if not data:
+        return jsonify({'error': 'Game not found'}), 404
+    return jsonify(data)
+
+# ======================================================================
+# 兼容端点 (v2.1)
+# ======================================================================
 
 @app.route('/')
 def index():
@@ -270,13 +528,22 @@ def get_personalities():
 @socketio.on('connect')
 def handle_connect():
     """客户端连接"""
-    emit('response', {'data': 'Connected to Wolf Agent v2.1'})
+    emit('response', {'data': 'Connected to Wolf Agent v2.2'})
 
 @socketio.on('join_game')
 def on_join_game(data):
     """加入游戏观测"""
     game_id = data.get('game_id')
     join_room(game_id)
+
+    # 优先返回回放数据
+    replay = build_replay_data(game_id)
+    if replay:
+        emit('game_state', {
+            'game_id': game_id,
+            'replay': replay,
+        })
+        return
 
     events = load_events(game_id)
     summary = load_summary(game_id)

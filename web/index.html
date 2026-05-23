@@ -1,648 +1,471 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Wolf Agent v2.1 — 实时观测</title>
-  <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.js"></script>
-  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0a0e27;
-      color: #e8e6e1;
-      overflow: hidden;
-    }
-
-    #app {
-      width: 100vw;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .header {
-      background: linear-gradient(135deg, #1a1f3a 0%, #2d1b4e 100%);
-      padding: 16px 24px;
-      border-bottom: 1px solid #3c3c5c;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .header h1 {
-      font-size: 20px;
-      font-weight: 600;
-    }
-
-    .header-info {
-      display: flex;
-      gap: 24px;
-      font-size: 14px;
-      align-items: center;
-    }
-
-    .header-info span {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .scene-toggle {
-      display: flex;
-      gap: 8px;
-    }
-
-    .scene-toggle button {
-      padding: 8px 16px;
-      border: 1px solid #3c3c5c;
-      background: #1a1f3a;
-      color: #e8e6e1;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.2s;
-      font-size: 13px;
-    }
-
-    .scene-toggle button:hover {
-      background: #252d4a;
-      border-color: #5a5a7a;
-    }
-
-    .scene-toggle button.active {
-      background: #8b5cf6;
-      border-color: #8b5cf6;
-      font-weight: 600;
-    }
-
-    .status-badge {
-      display: inline-block;
-      padding: 4px 12px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 600;
-    }
-
-    .status-day {
-      background: #d4a574;
-      color: #0a0e27;
-    }
-
-    .status-night {
-      background: #4a5568;
-      color: #e8e6e1;
-    }
-
-    .main-container {
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-    }
-
-    .sidebar {
-      width: 280px;
-      background: #0f1419;
-      border-right: 1px solid #3c3c5c;
-      overflow-y: auto;
-      padding: 16px;
-    }
-
-    .game-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .game-item {
-      padding: 12px;
-      background: #1a1f3a;
-      border: 1px solid #3c3c5c;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.2s;
-      font-size: 13px;
-    }
-
-    .game-item:hover {
-      background: #252d4a;
-      border-color: #5a5a7a;
-    }
-
-    .game-item.active {
-      background: #2d1b4e;
-      border-color: #8b5cf6;
-    }
-
-    .game-item-title {
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-
-    .game-item-meta {
-      font-size: 12px;
-      color: #aaa89d;
-    }
-
-    .canvas-container {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: #0a0e27;
-      position: relative;
-    }
-
-    /* 白天背景 */
-    .canvas-day {
-      background: linear-gradient(180deg, #e8d5b7 0%, #d4c5a9 100%);
-    }
-
-    /* 晚上背景 */
-    .canvas-night {
-      background: linear-gradient(180deg, #1a1a2e 0%, #0f0f1e 100%);
-    }
-
-    canvas {
-      flex: 1;
-      display: block;
-    }
-
-    .info-panel {
-      width: 320px;
-      background: #0f1419;
-      border-left: 1px solid #3c3c5c;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    .info-header {
-      padding: 16px;
-      border-bottom: 1px solid #3c3c5c;
-      font-weight: 600;
-      font-size: 14px;
-    }
-
-    .info-content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 16px;
-    }
-
-    .message-item {
-      margin-bottom: 12px;
-      padding: 12px;
-      background: #1a1f3a;
-      border-radius: 6px;
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
-    .message-speaker {
-      font-weight: 600;
-      color: #d7b969;
-      margin-bottom: 4px;
-    }
-
-    .message-content {
-      color: #e8e6e1;
-    }
-
-    .message-personality {
-      font-size: 11px;
-      color: #aaa89d;
-      margin-top: 4px;
-    }
-
-    .player-panel {
-      margin-bottom: 16px;
-      padding: 12px;
-      background: #1a1f3a;
-      border-radius: 6px;
-      font-size: 12px;
-    }
-
-    .player-name {
-      font-weight: 600;
-      margin-bottom: 4px;
-      color: #d7b969;
-    }
-
-    .player-role {
-      color: #82a9d9;
-      margin-bottom: 2px;
-    }
-
-    .player-personality {
-      color: #b392d6;
-    }
-
-    .player-status {
-      margin-top: 4px;
-      padding: 4px 8px;
-      background: #0a0e27;
-      border-radius: 4px;
-      font-size: 11px;
-    }
-
-    .status-alive {
-      color: #7bc77e;
-    }
-
-    .status-dead {
-      color: #d96f65;
-    }
-
-    /* 滚动条美化 */
-    ::-webkit-scrollbar {
-      width: 8px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: #0f1419;
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: #3c3c5c;
-      border-radius: 4px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: #5a5a7a;
-    }
-
-    .loading {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      font-size: 14px;
-      color: #aaa89d;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wolf Agent v2.2 — 游戏验证</title>
+<script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0a0e27; color:#e8e6e1; overflow:hidden; }
+#app { width:100vw; height:100vh; display:flex; flex-direction:column; }
+.header { background:linear-gradient(135deg,#1a1f3a 0%,#2d1b4e 100%); padding:12px 24px; border-bottom:1px solid #3c3c5c; display:flex; justify-content:space-between; align-items:center; }
+.header h1 { font-size:18px; font-weight:600; }
+.header-right { display:flex; gap:12px; align-items:center; }
+.mode-badge { padding:4px 10px; border-radius:10px; font-size:11px; font-weight:600; }
+.mode-stub { background:#10b981; color:#fff; }
+.mode-real { background:#ef4444; color:#fff; }
+.btn { padding:8px 16px; border:1px solid #3c3c5c; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; transition:all 0.2s; }
+.btn-primary { background:#8b5cf6; border-color:#8b5cf6; color:#fff; }
+.btn-primary:hover { background:#7c3aed; }
+.btn-green { background:#10b981; border-color:#059669; color:#fff; }
+.btn-green:hover { background:#059669; }
+.btn-secondary { background:#1a1f3a; color:#e8e6e1; }
+.btn-secondary:hover { background:#252d4a; }
+.btn:disabled { opacity:0.5; cursor:not-allowed; }
+.main-layout { flex:1; display:flex; overflow:hidden; }
+.left-rail { width:260px; background:#0f1419; border-right:1px solid #3c3c5c; display:flex; flex-direction:column; overflow-y:auto; padding:12px; gap:12px; }
+.center-stage { flex:1; display:flex; flex-direction:column; background:#0a0e27; position:relative; }
+.right-panel { width:340px; background:#0f1419; border-left:1px solid #3c3c5c; display:flex; flex-direction:column; overflow:hidden; }
+canvas { flex:1; display:block; }
+.settings-section { background:#1a1f3a; border:1px solid #3c3c5c; border-radius:8px; padding:12px; }
+.settings-label { font-size:12px; font-weight:600; color:#d7b969; margin-bottom:8px; display:block; }
+.setting-row { margin-bottom:10px; }
+.setting-row label { font-size:12px; color:#aaa89d; display:block; margin-bottom:4px; }
+.setting-row input[type=number] { width:100%; padding:8px; background:#0f1419; border:1px solid #3c3c5c; border-radius:4px; color:#e8e6e1; font-size:13px; }
+.segmented { display:flex; gap:4px; }
+.segmented button { flex:1; padding:6px 0; border:1px solid #3c3c5c; background:#0f1419; color:#e8e6e1; border-radius:4px; cursor:pointer; font-size:12px; transition:all 0.2s; }
+.segmented button.selected { background:#8b5cf6; border-color:#8b5cf6; color:#fff; }
+.checkbox-row { display:flex; align-items:center; gap:6px; margin-top:6px; }
+.checkbox-row input[type=checkbox] { cursor:pointer; }
+.checkbox-row label { font-size:12px; color:#e8e6e1; cursor:pointer; }
+.cost-warning { background:#7f1d1d; border:1px solid #ef4444; border-radius:4px; padding:8px; margin-top:8px; font-size:11px; color:#fca5a5; }
+.progress-bar { width:100%; height:8px; background:#0f1419; border-radius:4px; overflow:hidden; }
+.progress-fill { height:100%; background:linear-gradient(90deg,#8b5cf6,#10b981); transition:width 0.3s; }
+.progress-text { font-size:11px; color:#aaa89d; margin-top:4px; }
+.game-list { display:flex; flex-direction:column; gap:6px; }
+.game-card { padding:10px 12px; background:#1a1f3a; border:1px solid #3c3c5c; border-radius:6px; cursor:pointer; transition:all 0.2s; font-size:12px; }
+.game-card:hover { border-color:#8b5cf6; }
+.game-card.selected { background:#2d1b4e; border-color:#8b5cf6; }
+.game-card-title { font-weight:600; color:#d7b969; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.game-card-meta { color:#aaa89d; margin-top:4px; }
+.scene-tabs { display:flex; border-bottom:1px solid #3c3c5c; }
+.scene-tab { flex:1; padding:10px; text-align:center; cursor:pointer; font-size:13px; font-weight:600; border-bottom:2px solid transparent; transition:all 0.2s; }
+.scene-tab:hover { background:#1a1f3a; }
+.scene-tab.active { border-bottom-color:#8b5cf6; color:#8b5cf6; }
+.round-selector { padding:8px 12px; border-bottom:1px solid #3c3c5c; display:flex; gap:8px; align-items:center; overflow-x:auto; }
+.round-btn { padding:4px 10px; border:1px solid #3c3c5c; border-radius:4px; background:#1a1f3a; color:#e8e6e1; cursor:pointer; font-size:12px; white-space:nowrap; }
+.round-btn.selected { background:#8b5cf6; border-color:#8b5cf6; }
+.panel-content { flex:1; overflow-y:auto; padding:12px; }
+.msg-item { margin-bottom:10px; padding:10px; background:#1a1f3a; border-radius:6px; font-size:12px; }
+.msg-header { display:flex; gap:8px; margin-bottom:4px; flex-wrap:wrap; }
+.msg-badge { padding:2px 6px; border-radius:4px; font-size:10px; font-weight:600; }
+.badge-wolf { background:#d96f65; color:#fff; }
+.badge-villager { background:#7bc77e; color:#0a0e27; }
+.badge-seer { background:#82a9d9; color:#0a0e27; }
+.badge-witch { background:#b392d6; color:#0a0e27; }
+.msg-speaker { font-weight:600; color:#d7b969; }
+.msg-content { color:#e8e6e1; line-height:1.5; margin-top:4px; }
+.msg-summary { font-size:11px; color:#aaa89d; margin-top:4px; }
+.vote-table { margin-top:12px; }
+.vote-table table { width:100%; border-collapse:collapse; font-size:11px; }
+.vote-table td { padding:4px 8px; border:1px solid #3c3c5c; }
+.vote-result { margin-top:8px; padding:8px; background:#1a1f3a; border-radius:4px; font-size:12px; }
+.death-item { padding:6px 8px; background:#7f1d1d; border-radius:4px; margin:4px 0; font-size:12px; }
+.system-event { padding:6px 8px; color:#d7b969; font-size:12px; border-left:2px solid #d7b969; margin:6px 0; }
+.player-detail { padding:10px; background:#1a1f3a; border-radius:6px; margin-bottom:8px; font-size:12px; }
+.player-detail .name { font-weight:600; color:#d7b969; }
+.player-detail .role { color:#82a9d9; }
+.player-detail .personality { color:#b392d6; }
+.memory-section { padding:10px; background:#1a1f3a; border-radius:6px; margin-top:8px; }
+.memory-section .title { font-weight:600; color:#d7b969; margin-bottom:6px; font-size:12px; }
+.memory-section .content { font-size:12px; line-height:1.5; color:#e8e6e1; }
+.empty-state { display:flex; align-items:center; justify-content:center; height:100%; color:#aaa89d; font-size:14px; }
+.winner-banner { padding:16px; text-align:center; border-radius:8px; margin-bottom:12px; font-size:16px; font-weight:700; }
+.winner-wolf { background:linear-gradient(135deg,#7f1d1d,#991b1b); color:#fca5a5; }
+.winner-villager { background:linear-gradient(135deg,#064e3b,#065f46); color:#6ee7b7; }
+::-webkit-scrollbar { width:6px; }
+::-webkit-scrollbar-track { background:#0f1419; }
+::-webkit-scrollbar-thumb { background:#3c3c5c; border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:#5a5a7a; }
+</style>
 </head>
 <body>
-  <div id="app">
-    <div class="header">
-      <h1>🐺 Wolf Agent v2.1 — 实时观测</h1>
-      <div class="header-info">
-        <!-- 场景切换按钮 -->
-        <div v-if="currentGame" class="scene-toggle">
-          <button
-            @click="selectScene('day')"
-            :class="{ active: selectedScene === 'day' }"
-          >
-            ☀️ 白天
-          </button>
-          <button
-            @click="selectScene('night')"
-            :class="{ active: selectedScene === 'night' }"
-          >
-            🌙 晚上
-          </button>
+<div id="app">
+  <div class="header">
+    <h1>🐺 Wolf Agent v2.2</h1>
+    <div class="header-right">
+      <span class="mode-badge" :class="runMode === 'real' ? 'mode-real' : 'mode-stub'">{{ runMode === 'real' ? 'Real' : 'Stub' }}</span>
+      <button class="btn btn-green" @click="showSettings = true" :disabled="isRunning">▶️ 开始游戏</button>
+    </div>
+  </div>
+
+  <div class="main-layout">
+    <!-- 左侧栏 -->
+    <div class="left-rail">
+      <!-- 运行控制 -->
+      <div v-if="isRunning" class="settings-section">
+        <span class="settings-label">运行中</span>
+        <div class="progress-bar"><div class="progress-fill" :style="{width:runPct+'%'}"></div></div>
+        <div class="progress-text">{{ runCompleted }}/{{ runTotal }} · {{ runStatus }}</div>
+        <div v-if="runErrors.length > 0" style="margin-top:8px;font-size:10px;color:#fca5a5;">
+          {{ runErrors.length }} 局失败
         </div>
-        <span v-if="currentGame">
-          <span class="status-badge" :class="selectedScene === 'night' ? 'status-night' : 'status-day'">
-            {{ selectedScene === 'night' ? '🌙 晚上' : '☀️ 白天' }}
-          </span>
-        </span>
-        <span v-if="currentGame">第 {{ currentRound }} 轮</span>
-        <span v-if="currentGame">存活: {{ aliveCount }}/9</span>
+      </div>
+
+      <!-- 结果列表 -->
+      <div class="settings-section" v-if="allResults.length > 0 || isRunning">
+        <span class="settings-label">对局结果</span>
+        <div class="game-list">
+          <div v-for="r in allResults" :key="r.game_id" class="game-card"
+               :class="{ selected: selectedGameId === r.game_id }"
+               @click="openReplay(r.game_id)">
+            <div class="game-card-title">{{ r.game_id }}</div>
+            <div class="game-card-meta">
+              {{ r.winner === 'werewolf' ? '🐺' : '👤' }} {{ r.rounds }}轮 · {{ r.event_count }}事件
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 已保存对局 -->
+      <div class="settings-section">
+        <span class="settings-label">已保存对局</span>
+        <div class="game-list">
+          <div v-for="g in savedGames" :key="g.game_id" class="game-card"
+               :class="{ selected: selectedGameId === g.game_id }"
+               @click="openReplay(g.game_id)">
+            <div class="game-card-title" style="font-size:11px;">{{ g.game_id }}</div>
+            <div class="game-card-meta">
+              {{ g.winner === 'werewolf' ? '🐺' : '👤' }} {{ g.rounds }}轮
+            </div>
+          </div>
+        </div>
+        <div v-if="savedGames.length === 0" style="font-size:11px;color:#aaa89d;text-align:center;padding:12px;">暂无对局</div>
       </div>
     </div>
 
-    <div class="main-container">
-      <!-- 左侧：游戏列表 -->
-      <div class="sidebar">
-        <div style="margin-bottom: 16px; font-weight: 600; font-size: 13px;">对局列表</div>
-        <div class="game-list">
-          <div
-            v-for="game in games"
-            :key="game.game_id"
-            class="game-item"
-            :class="{ active: currentGame?.game_id === game.game_id }"
-            @click="selectGame(game)"
-          >
-            <div class="game-item-title">{{ game.game_id }}</div>
-            <div class="game-item-meta">
-              🏆 {{ game.winner === 'werewolf' ? '🐺 狼人' : '👨 村民' }} 胜
-            </div>
-            <div class="game-item-meta">
-              ⏱️ {{ game.rounds }} 轮 · {{ game.events }} 事件
-            </div>
-          </div>
-        </div>
+    <!-- 中间舞台 -->
+    <div class="center-stage">
+      <canvas v-if="replayData" ref="gameCanvas" :width="canvasW" :height="canvasH"></canvas>
+      <div v-else class="empty-state">点击"开始游戏"运行对局，或从左侧选择已保存的对局</div>
+    </div>
+
+    <!-- 右侧面板 -->
+    <div class="right-panel" v-if="replayData">
+      <div class="scene-tabs">
+        <div class="scene-tab" :class="{active:scene==='day'}" @click="scene='day'">☀️ 白天</div>
+        <div class="scene-tab" :class="{active:scene==='night'}" @click="scene='night'">🌙 夜晚</div>
+        <div class="scene-tab" :class="{active:scene==='end'}" @click="scene='end'">🏁 结算</div>
       </div>
 
-      <!-- 中间：Canvas 画布 -->
-      <div class="canvas-container" :class="selectedScene === 'night' ? 'canvas-night' : 'canvas-day'">
-        <canvas
-          v-if="currentGame"
-          ref="gameCanvas"
-          :width="canvasWidth"
-          :height="canvasHeight"
-        ></canvas>
-        <div v-else class="loading">选择一个对局开始观测</div>
+      <div class="round-selector" v-if="scene !== 'end'">
+        <div v-for="r in replayData.rounds" :key="r.round" class="round-btn"
+             :class="{selected:currentRound===r.round}"
+             @click="currentRound=r.round">R{{ r.round }}</div>
       </div>
 
-      <!-- 右侧：信息面板 -->
-      <div class="info-panel" v-if="currentGame">
-        <div class="info-header">
-          {{ selectedScene === 'night' ? '🐺 狼人商量' : '💬 发言流' }}
+      <div class="panel-content">
+        <!-- 白天 -->
+        <div v-if="scene==='day' && roundData">
+          <div v-if="roundData.day.announcements?.length" class="system-event" v-for="a in roundData.day.announcements">{{ a }}</div>
+          <div v-if="roundData.day.messages" v-for="m in roundData.day.messages" class="msg-item">
+            <div class="msg-header">
+              <span class="msg-speaker">{{ m.player_id }}号</span>
+              <span class="msg-badge" :class="'badge-'+getRoleClass(m.role)">{{ roleNames[m.role] }}</span>
+            </div>
+            <div class="msg-content">{{ m.content }}</div>
+            <div class="msg-summary" v-if="m.strategy_summary">{{ m.strategy_summary }}</div>
+          </div>
+          <div v-if="roundData.day.votes?.length" class="vote-table">
+            <div style="font-weight:600;margin-bottom:4px;font-size:12px;color:#d7b969;">📊 投票</div>
+            <table><tr v-for="v in roundData.day.votes"><td>{{ v.voter }}号 → {{ v.target }}号</td></tr></table>
+          </div>
+          <div v-if="roundData.day.vote_result" class="vote-result">
+            <div v-if="roundData.day.vote_result.eliminated"><strong>出局:</strong> {{ roundData.day.vote_result.eliminated }}号</div>
+            <div v-if="roundData.day.vote_result.tie">⚖️ 平票</div>
+            <div v-if="roundData.day.vote_result.counts" style="margin-top:4px;color:#aaa89d;">
+              <div v-for="(c,p) in roundData.day.vote_result.counts">{{ p }}号: {{ c }} 票</div>
+            </div>
+          </div>
+          <div v-if="!roundData.day.messages?.length && !roundData.day.votes?.length" style="color:#aaa89d;font-size:12px;text-align:center;">本回合无公开发言</div>
         </div>
-        <div class="info-content">
-          <!-- 玩家信息 -->
-          <div v-for="player in displayPlayers" :key="player.id" class="player-panel">
-            <div class="player-name">{{ player.id }}号 [{{ player.personality }}]</div>
-            <div class="player-role">{{ roleNames[player.role] }}</div>
-            <div class="player-personality">{{ personalityNames[player.personality] }}</div>
-            <div class="player-status" :class="player.alive ? 'status-alive' : 'status-dead'">
-              {{ player.alive ? '✓ 存活' : '✗ 死亡' }}
-            </div>
-          </div>
 
-          <!-- 消息流 -->
-          <div v-if="currentMessages.length > 0">
-            <div style="font-weight: 600; margin-top: 16px; margin-bottom: 8px; font-size: 12px;">
-              {{ selectedScene === 'night' ? '狼人讨论' : '发言记录' }}
+        <!-- 夜晚 -->
+        <div v-if="scene==='night' && roundData">
+          <div class="system-event" v-if="roundData.night.kill_target">🔪 刀人目标: {{ roundData.night.kill_target }}号</div>
+          <div class="death-item" v-for="d in roundData.night.deaths" v-if="roundData.night.deaths?.length">💀 {{ d }}号死亡</div>
+          <div v-if="roundData.night.messages" v-for="m in roundData.night.messages" class="msg-item">
+            <div class="msg-header">
+              <span class="msg-speaker">{{ m.player_id }}号</span>
+              <span class="msg-badge badge-wolf">🐺 狼人</span>
             </div>
-            <div v-for="(msg, idx) in currentMessages.slice(-5)" :key="idx" class="message-item">
-              <div class="message-speaker">{{ msg.speaker }}号</div>
-              <div class="message-content">{{ msg.content }}</div>
-              <div class="message-personality">{{ msg.personality }}</div>
-            </div>
+            <div class="msg-content">{{ m.content }}</div>
+            <div class="msg-summary" v-if="m.strategy_summary">{{ m.strategy_summary }}</div>
           </div>
+          <div v-if="!roundData.night.kill_target && !roundData.night.messages?.length" style="color:#aaa89d;font-size:12px;text-align:center;">本回合无狼人行动</div>
+        </div>
 
-          <!-- P1: 投票结果 -->
-          <div v-if="voteResult && selectedScene === 'day'">
-            <div style="font-weight: 600; margin-top: 16px; margin-bottom: 8px; font-size: 12px; color: #d7b969;">
-              📊 投票结果
+        <!-- 结算 -->
+        <div v-if="scene==='end'">
+          <div class="winner-banner" :class="replayData.winner==='werewolf'?'winner-wolf':'winner-villager'">
+            {{ replayData.winner === 'werewolf' ? '🐺 狼人胜利' : '👤 好人阵营胜利' }}
+          </div>
+          <div v-for="p in replayData.players" class="player-detail">
+            <div class="name">{{ p.id }}号 [{{ p.personality }}] <span :style="{color:p.alive?'#7bc77e':'#d96f65'}">{{ p.alive?'存活':'死亡'}}</span></div>
+            <div class="role">{{ roleNames[p.role] }}</div>
+            <div class="personality">{{ personalityNames[p.personality] || p.personality }}</div>
+            <div class="memory-section" v-if="p.memory">
+              <div class="title">📝 赛后反思</div>
+              <div class="content">{{ p.memory.content || p.memory.text || JSON.stringify(p.memory) }}</div>
             </div>
-            <div style="background: #1a1f3a; border-radius: 6px; padding: 10px; font-size: 12px;">
-              <div v-if="voteResult.eliminated">
-                <strong>出局:</strong> {{ voteResult.eliminated }}号
-              </div>
-              <div v-if="voteResult.votes" style="margin-top: 8px; color: #aaa89d;">
-                <div v-for="(count, player) in voteResult.votes" :key="player" style="font-size: 11px;">
-                  {{ player }}号: {{ count }} 票
-                </div>
-              </div>
-            </div>
+            <div v-else style="font-size:11px;color:#aaa89d;margin-top:4px;">本局未写入记忆（stub 或 no-memory 模式）</div>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <script>
-    const { createApp } = Vue;
+  <!-- 设置弹窗 -->
+  <div v-if="showSettings" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;" @click.self="showSettings=false">
+    <div style="background:#1a1f3a;border:1px solid #3c3c5c;border-radius:12px;padding:24px;max-width:420px;width:90%;">
+      <div style="font-size:18px;font-weight:600;margin-bottom:20px;">🎮 开始游戏</div>
 
-    createApp({
-      data() {
-        return {
-          games: [],
-          currentGame: null,
-          selectedScene: 'day',        // 用户选择的场景
-          currentRound: 0,
-          aliveCount: 9,
-          canvasWidth: 0,
-          canvasHeight: 0,
-          gameState: null,
-          currentEvents: [],           // 所有事件
-          filteredEvents: [],          // 当前场景的事件
-          currentMessages: [],
-          currentSpeaker: null,        // 当前发言人（P1 新增）
-          voteResult: null,            // 投票结果（P1 新增）
-          socket: null,
-          roleNames: {
-            'werewolf': '🐺 狼人',
-            'seer': '🔮 预言家',
-            'witch': '🧙 女巫',
-            'villager': '👨 村民',
-          },
-          personalityNames: {
-            'BOSS': '掌控者',
-            'FAKE': '伪人',
-            'THIN-K': '思考者',
-            'FUCK': '草者',
-            'OJBK': '无所谓人',
-            'SHIT': '愤世者',
-            'ZZZZ': '装死者',
-            'MALO': '吗喽',
-            'JOKE-R': '小丑',
-            'LOVE-R': '多情者',
-            'MUM': '妈妈',
-            'IMSB': '傻者',
-            'SOLO': '孤儿',
-            'SEXY': '尤物',
-            'MONK': '僧人',
-            'DEAD': '死者',
-          },
-        };
+      <div class="setting-row">
+        <label>局数</label>
+        <input type="number" v-model.number="settings.batchSize" :min="1" :max="settings.mode==='real'?5:50">
+      </div>
+
+      <div class="setting-row">
+        <label>模式</label>
+        <div class="segmented">
+          <button :class="{selected:settings.mode==='stub'}" @click="settings.mode='stub';settings.batchSize=Math.min(settings.batchSize,50)">Stub</button>
+          <button :class="{selected:settings.mode==='real'}" @click="settings.mode='real';settings.batchSize=Math.min(settings.batchSize,5)">Real</button>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <label>Seed</label>
+        <div class="segmented">
+          <button :class="{selected:settings.seedMode==='random'}" @click="settings.seedMode='random'">随机</button>
+          <button :class="{selected:settings.seedMode==='fixed'}" @click="settings.seedMode='fixed'">固定</button>
+        </div>
+      </div>
+      <div class="setting-row" v-if="settings.seedMode==='fixed'">
+        <label>Base Seed</label>
+        <input type="number" v-model.number="settings.baseSeed">
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" v-model="settings.memoryEnabled" id="memcheck">
+        <label for="memcheck">启用记忆力</label>
+      </div>
+
+      <div v-if="settings.mode==='real'" class="cost-warning">⚠️ 真实模式会调用模型并产生费用</div>
+      <div class="checkbox-row" v-if="settings.mode==='real'" style="margin-top:8px;">
+        <input type="checkbox" v-model="settings.costConfirmed" id="costcheck">
+        <label for="costcheck" style="color:#fca5a5;">我知道这会产生 API 成本</label>
+      </div>
+
+      <div style="display:flex;gap:12px;margin-top:20px;">
+        <button class="btn btn-primary" style="flex:1" @click="startRun"
+                :disabled="settings.mode==='real' && !settings.costConfirmed">开始运行</button>
+        <button class="btn btn-secondary" style="flex:1" @click="showSettings=false">取消</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const { createApp } = Vue;
+createApp({
+  data() {
+    return {
+      showSettings: false,
+      settings: { batchSize:3, mode:'stub', seedMode:'random', baseSeed:42, memoryEnabled:false, costConfirmed:false },
+      runMode: 'stub',
+      isRunning: false, runId: null, runTotal:0, runCompleted:0, runPct:0, runStatus:'', runErrors:[],
+      allResults: [],
+      savedGames: [],
+      selectedGameId: null,
+      replayData: null,
+      scene: 'day',
+      currentRound: 1,
+      canvasW: 800, canvasH: 500,
+      selectedPlayerId: null,
+      pollTimer: null,
+      roleNames: { werewolf:'🐺 狼人', seer:'🔮 预言家', witch:'女巫', villager:'👨 村民' },
+      personalityNames: {
+        BOSS:'掌控者',FAKE:'伪人','THIN-K':'思考者',FUCK:'草者',OJBK:'无所谓人',SHIT:'愤世者',ZZZZ:'装死者',
+        MALO:'吗喽','JOKE-R':'小丑','LOVE-R':'多情者',MUM:'妈妈',IMSB:'傻者',SOLO:'孤儿',SEXY:'尤物',MONK:'僧人',DEAD:'死者',
       },
-      computed: {
-        displayPlayers() {
-          if (!this.gameState) return [];
-          const { roles, personalities, alive } = this.gameState;
-          return Object.keys(roles).map(id => ({
-            id: parseInt(id),
-            role: roles[id],
-            personality: personalities[id] || 'UNKNOWN',
-            alive: alive.includes(parseInt(id)),
-          })).sort((a, b) => a.id - b.id);
-        },
-      },
-      methods: {
-        async loadGames() {
-          try {
-            const res = await fetch('/api/games');
-            this.games = await res.json();
-          } catch (err) {
-            console.error('Failed to load games:', err);
-          }
-        },
-        async selectGame(game) {
-          this.currentGame = game;
-          this.selectedScene = 'day';  // 重置为白天
-          try {
-            const res = await fetch(`/api/games/${game.game_id}`);
-            const data = await res.json();
-            this.gameState = data.state;
-            this.currentEvents = data.events;
-            this.currentRound = data.state.current_round;
-            this.aliveCount = data.state.alive.length;
-            // 加载白天场景
-            await this.selectScene('day');
-          } catch (err) {
-            console.error('Failed to load game:', err);
-          }
-        },
-        async selectScene(scene) {
-          this.selectedScene = scene;
-          try {
-            const res = await fetch(`/api/games/${this.currentGame.game_id}/phase/${scene}`);
-            const data = await res.json();
-            this.filteredEvents = data.events;
-            this.gameState = data.state;
-            this.currentRound = data.state.current_round;
-            this.aliveCount = data.state.alive.length;
-            this.extractMessages();
-            this.drawGame();
-          } catch (err) {
-            console.error('Failed to load phase:', err);
-          }
-        },
-        extractMessages() {
-          this.currentMessages = this.filteredEvents
-            .filter(e => e.type === 'message_posted')
-            .map(e => ({
-              speaker: e.from_player,
-              content: e.content,
-              personality: this.personalityNames[this.gameState.personalities[e.from_player]] || 'UNKNOWN',
-            }));
-          
-          // P1: 推导当前发言人（最后一条 message_posted）
-          const lastMessage = this.filteredEvents
-            .filter(e => e.type === 'message_posted')
-            .pop();
-          this.currentSpeaker = lastMessage ? lastMessage.from_player : null;
-          
-          // P1: 推导投票结果
-          const voteResolved = this.filteredEvents
-            .filter(e => e.type === 'vote_resolved')
-            .pop();
-          if (voteResolved) {
-            this.voteResult = {
-              eliminated: voteResolved.metadata?.eliminated_player,
-              votes: voteResolved.metadata?.vote_counts || {},
-            };
-          } else {
-            this.voteResult = null;
-          }
-        },
-        drawGame() {
-          const canvas = this.$refs.gameCanvas;
-          if (!canvas) return;
+    };
+  },
+  computed: {
+    roundData() {
+      if (!this.replayData) return null;
+      return this.replayData.rounds.find(r => r.round === this.currentRound) || null;
+    },
+  },
+  methods: {
+    getRoleClass(role) {
+      if (role === 'werewolf') return 'wolf';
+      if (role === 'seer') return 'seer';
+      if (role === 'witch') return 'witch';
+      return 'villager';
+    },
+    async loadSavedGames() {
+      try { const r = await fetch('/api/games'); this.savedGames = await r.json(); } catch(e){}
+    },
 
-          const ctx = canvas.getContext('2d');
-          const w = canvas.width;
-          const h = canvas.height;
+    async startRun() {
+      this.showSettings = false;
+      this.runMode = this.settings.mode;
+      this.isRunning = true; this.runCompleted = 0; this.runPct = 0; this.runStatus = 'queued';
+      this.allResults = []; this.runErrors = [];
 
-          // 清空画布 - 根据 selectedScene 选择背景色
-          ctx.fillStyle = this.selectedScene === 'night' ? '#1a1a2e' : '#e8d5b7';
-          ctx.fillRect(0, 0, w, h);
-
-          // 绘制玩家
-          this.drawPlayers(ctx, w, h);
-        },
-        drawPlayers(ctx, w, h) {
-          const players = this.displayPlayers;
-          const centerX = w / 2;
-          const centerY = h / 2;
-          const radius = Math.min(w, h) / 3;
-
-          players.forEach((player, idx) => {
-            const angle = (idx / players.length) * Math.PI * 2 - Math.PI / 2;
-            const x = centerX + Math.cos(angle) * radius;
-            const y = centerY + Math.sin(angle) * radius;
-
-            // 绘制像素小人
-            this.drawPixelPerson(ctx, x, y, player, this.selectedScene === 'night');
-          });
-
-          // 绘制中间舞台
-          ctx.strokeStyle = this.selectedScene === 'night' ? '#4a5568' : '#8b7355';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(centerX, centerY, 60, 0, Math.PI * 2);
-          ctx.stroke();
-
-          // 绘制舞台文字
-          ctx.fillStyle = this.selectedScene === 'night' ? '#aaa89d' : '#5a4a3a';
-          ctx.font = 'bold 14px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(this.selectedScene === 'night' ? '🐺 商量中' : '💬 发言中', centerX, centerY);
-        },
-        drawPixelPerson(ctx, x, y, player, isNight) {
-          const size = 24;
-          const color = isNight ? '#4a5568' : '#d4a574';
-
-          // 简化的像素小人（正方形 + 圆形头）
-          ctx.fillStyle = color;
-          ctx.fillRect(x - size / 2, y - size / 2, size, size);
-
-          // 头
-          ctx.fillStyle = isNight ? '#6b7280' : '#e8d5b7';
-          ctx.beginPath();
-          ctx.arc(x, y - size / 2 - 8, 8, 0, Math.PI * 2);
-          ctx.fill();
-
-          // 如果是狼人且是晚上，画耳朵
-          if (isNight && player.role === 'werewolf') {
-            ctx.fillStyle = '#d96f65';
-            ctx.beginPath();
-            ctx.arc(x - 6, y - size / 2 - 14, 4, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(x + 6, y - size / 2 - 14, 4, 0, Math.PI * 2);
-            ctx.fill();
-          }
-
-          // 玩家编号
-          ctx.fillStyle = '#0a0e27';
-          ctx.font = 'bold 10px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(player.id, x, y);
-
-          // 状态指示 - 死亡显示叉号
-          if (!player.alive) {
-            ctx.strokeStyle = '#d96f65';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(x - size / 2, y - size / 2);
-            ctx.lineTo(x + size / 2, y + size / 2);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(x + size / 2, y - size / 2);
-            ctx.lineTo(x - size / 2, y + size / 2);
-            ctx.stroke();
-          }
-          
-          // P1: 当前发言人高亮圈
-          if (this.currentSpeaker === player.id) {
-            ctx.strokeStyle = '#d7b969';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.arc(x, y, size / 2 + 6, 0, Math.PI * 2);
-            ctx.stroke();
-          }
-        },
-      },
-      watch: {
-        filteredEvents() {
-          // 当过滤事件变化时重新提取消息
-          this.extractMessages();
-        },
-      },
-      mounted() {
-        this.canvasWidth = window.innerWidth - 280 - 320;
-        this.canvasHeight = window.innerHeight - 60;
-        this.loadGames();
-
-        window.addEventListener('resize', () => {
-          this.canvasWidth = window.innerWidth - 280 - 320;
-          this.canvasHeight = window.innerHeight - 60;
-          if (this.currentGame) this.drawGame();
+      try {
+        const res = await fetch('/api/runs', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            batch_size: this.settings.batchSize,
+            mode: this.settings.mode,
+            memory_enabled: this.settings.memoryEnabled,
+            seed_mode: this.settings.seedMode,
+            base_seed: this.settings.seedMode === 'fixed' ? this.settings.baseSeed : null,
+          }),
         });
-      },
-    }).mount('#app');
-  </script>
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        this.runId = data.run_id;
+        this.runTotal = data.total;
+        this.pollRun();
+      } catch(e) {
+        alert('启动失败: ' + e.message);
+        this.isRunning = false;
+      }
+    },
+
+    async pollRun() {
+      if (!this.runId) return;
+      try {
+        const res = await fetch(`/api/runs/${this.runId}`);
+        const s = await res.json();
+        this.runStatus = s.status;
+        this.runCompleted = s.completed + s.failed;
+        this.runPct = Math.round((this.runCompleted / s.total) * 100);
+        this.allResults = s.results || [];
+        this.runErrors = s.errors || [];
+
+        if (s.status === 'completed' || s.status === 'partial_success' || s.status === 'failed') {
+          this.isRunning = false;
+          if (this.allResults.length > 0) {
+            await this.loadSavedGames();
+            this.openReplay(this.allResults[0].game_id);
+          }
+        } else {
+          this.pollTimer = setTimeout(() => this.pollRun(), 500);
+        }
+      } catch(e) {
+        this.pollTimer = setTimeout(() => this.pollRun(), 1000);
+      }
+    },
+
+    async openReplay(gameId) {
+      this.selectedGameId = gameId;
+      try {
+        const res = await fetch(`/api/games/${gameId}/replay`);
+        this.replayData = await res.json();
+        this.scene = 'day';
+        this.currentRound = this.replayData.rounds.length > 0 ? this.replayData.rounds[0].round : 1;
+        this.$nextTick(() => this.drawBoard());
+      } catch(e) { console.error('Replay error:', e); }
+    },
+
+    drawBoard() {
+      const canvas = this.$refs.gameCanvas;
+      if (!canvas || !this.replayData) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width, h = canvas.height;
+      ctx.fillStyle = this.scene === 'night' ? '#1a1a2e' : '#e8d5b7';
+      ctx.fillRect(0, 0, w, h);
+
+      const players = this.replayData.players;
+      const cx = w/2, cy = h/2, radius = Math.min(w, h)/3;
+
+      players.forEach((p, i) => {
+        const angle = (i / players.length) * Math.PI * 2 - Math.PI / 2;
+        const x = cx + Math.cos(angle) * radius;
+        const y = cy + Math.sin(angle) * radius;
+        this.drawPlayer(ctx, x, y, p);
+      });
+    },
+
+    drawPlayer(ctx, x, y, player) {
+      const size = 28;
+      const isNight = this.scene === 'night';
+      const roleColors = { werewolf:'#d96f65', seer:'#82a9d9', witch:'#b392d6', villager:'#7bc77e' };
+
+      // 身体
+      ctx.fillStyle = isNight ? '#4a5568' : '#d4a574';
+      ctx.fillRect(x - size/2, y - size/2, size, size);
+
+      // 头
+      ctx.fillStyle = isNight ? '#6b7280' : '#e8d5b7';
+      ctx.beginPath(); ctx.arc(x, y - size/2 - 10, 9, 0, Math.PI*2); ctx.fill();
+
+      // 狼耳朵
+      if (isNight && player.role === 'werewolf') {
+        ctx.fillStyle = '#d96f65';
+        ctx.beginPath(); ctx.arc(x-7, y-size/2-17, 5, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x+7, y-size/2-17, 5, 0, Math.PI*2); ctx.fill();
+      }
+
+      // 编号
+      ctx.fillStyle = '#0a0e27';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(player.id, x, y);
+
+      // 角色色环
+      ctx.strokeStyle = roleColors[player.role] || '#aaa89d';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, size/2 + 4, 0, Math.PI*2); ctx.stroke();
+
+      // 死亡 X
+      if (!player.alive) {
+        ctx.strokeStyle = '#d96f65'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x-size/2, y-size/2); ctx.lineTo(x+size/2, y+size/2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x+size/2, y-size/2); ctx.lineTo(x-size/2, y+size/2); ctx.stroke();
+      }
+
+      // 高亮选中玩家
+      if (this.selectedPlayerId === player.id) {
+        ctx.strokeStyle = '#d7b969'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(x, y, size/2 + 8, 0, Math.PI*2); ctx.stroke();
+      }
+    },
+  },
+  watch: {
+    scene() { this.$nextTick(() => this.drawBoard()); },
+    currentRound() { this.$nextTick(() => this.drawBoard()); },
+  },
+  mounted() {
+    this.canvasW = window.innerWidth - 260 - 340;
+    this.canvasH = window.innerHeight - 60;
+    this.loadSavedGames();
+    window.addEventListener('resize', () => {
+      this.canvasW = window.innerWidth - 260 - 340;
+      this.canvasH = window.innerHeight - 60;
+      if (this.replayData) this.drawBoard();
+    });
+  },
+  beforeUnmount() { if (this.pollTimer) clearTimeout(this.pollTimer); },
+}).mount('#app');
+</script>
 </body>
 </html>
