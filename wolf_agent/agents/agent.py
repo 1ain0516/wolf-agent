@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .llm import LLMClient
-from .mbti import MBTI_TEMPLATES
+from .personality import PERSONALITY_TEMPLATES
 
 ROLE_NAMES = {
     "werewolf": "狼人",
@@ -12,25 +12,32 @@ ROLE_NAMES = {
 
 
 class Agent:
-    """A wolf-agent player with MBTI personality, backed by LLM."""
+    """A wolf-agent player with SBTI personality, backed by LLM."""
 
-    def __init__(self, player_id: int, role: str, mbti: str, llm: LLMClient):
+    def __init__(self, player_id: int, role: str, personality: str, llm: LLMClient,
+                 memories: list | None = None):
         self.player_id = player_id
         self.role = role
-        self.mbti = mbti
+        self.personality = personality
         self.alive = True
         self.llm = llm
+        self.memories = memories or []
         self._build_prompt()
 
     def _build_prompt(self):
-        tpl = MBTI_TEMPLATES[self.mbti]
-        self.system_prompt = (
-            f"你是 {self.player_id} 号玩家，身份为【{ROLE_NAMES[self.role]}】。\n"
-            f"你的性格是【{self.mbti}】（{tpl['title']}）：{tpl['description']}\n"
-            f"发言风格：{tpl['style']}\n"
-            f"策略倾向：{tpl['strategy']}\n"
-            "禁止说出你是AI或提及游戏外信息。"
-        )
+        tpl = PERSONALITY_TEMPLATES[self.personality]
+        lines = [
+            f"你是 {self.player_id} 号玩家，身份为【{ROLE_NAMES[self.role]}】。",
+            f"你的性格是【{self.personality}】（{tpl['title']}）：{tpl['description']}",
+            f"发言风格：{tpl['style']}",
+            f"策略倾向：{tpl['strategy']}",
+        ]
+        if self.memories:
+            lines.append("\n你的历史对局记忆（可能会影响你的判断）：")
+            for m in self.memories:
+                lines.append(f"  - {m['content']}")
+        lines.append("禁止说出你是AI或提及游戏外信息。")
+        self.system_prompt = "\n".join(lines)
 
     def build_context(self, game_state: dict) -> str:
         parts = [f"第 {game_state['round_num']} 轮"]
@@ -129,6 +136,22 @@ class Agent:
             "use_antidote": result.get("use_antidote", False),
             "poison_target": result.get("poison_target"),
         }
+
+    def reflect(self, context: str) -> str:
+        """Generate a self-review reflection after the game."""
+        msgs = [
+            {"role": "system", "content": self.system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"{context}\n\n"
+                    "游戏结束了。请回顾你自己的表现：你做了哪些关键决策？"
+                    "哪些做得好？哪些下次可以改进？"
+                    "请简短总结（≤100字）。"
+                ),
+            },
+        ]
+        return self.llm.reflect(msgs)
 
     def wolf_discuss(self, context: str, packmates: list[int]) -> str:
         pack_str = ", ".join(f"{p}号" for p in packmates)

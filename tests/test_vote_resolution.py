@@ -25,7 +25,7 @@ def test_vote_majority():
         "alive": [1, 2, 3, 4, 5],
         "round_num": 1,
         "public_messages": [],
-        "players": [{"id": i, "mbti": "INTP", "role": "villager"} for i in range(1, 10)],
+        "players": [{"id": i, "personality": "BOSS", "role": "villager"} for i in range(1, 10)],
         "game_id": "test",
         "event_log_path": os.devnull,
     }
@@ -45,7 +45,7 @@ def test_tie_revote_returns_none():
         "alive": [1, 2],
         "round_num": 1,
         "public_messages": [],
-        "players": [{"id": i, "mbti": "INTP", "role": "villager"} for i in range(1, 10)],
+        "players": [{"id": i, "personality": "BOSS", "role": "villager"} for i in range(1, 10)],
         "game_id": "test",
         "event_log_path": os.devnull,
     }
@@ -75,7 +75,7 @@ def test_vote_self_not_counted():
         "alive": [1, 2, 3, 4, 5],
         "round_num": 1,
         "public_messages": [],
-        "players": [{"id": i, "mbti": "INTP", "role": "villager"} for i in range(1, 10)],
+        "players": [{"id": i, "personality": "BOSS", "role": "villager"} for i in range(1, 10)],
         "game_id": "test",
         "event_log_path": os.devnull,
     }

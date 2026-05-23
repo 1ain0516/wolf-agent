@@ -12,7 +12,8 @@ from typing import Any, Optional
 from langgraph.graph import StateGraph, END
 
 from wolf_agent.events import EventLog
-from wolf_agent.agents import LLMClient, Agent, MBTI_LIST
+from wolf_agent.agents import LLMClient, Agent, PERSONALITY_LIST
+from wolf_agent.engine.memory import save_memory, load_memories
 
 # --- Constants ---
 PLAYER_COUNT = 9
@@ -80,15 +81,18 @@ def default_state(seed: int) -> dict:
         "executed_today": None,
         "last_will": None,
         "first_night": True,
+        "_no_memory": False,
+        "_memory_dir": "",
+        "_player_memories": {},
     }
 
 
 # --- Helper functions ---
 
-def _pick_mbti(rng: random.Random, used_mbti: list[str]) -> str:
-    available = [m for m in MBTI_LIST if m not in used_mbti]
+def _pick_personality(rng: random.Random, used_personality: list[str]) -> str:
+    available = [m for m in PERSONALITY_LIST if m not in used_personality]
     if not available:
-        available = MBTI_LIST[:]
+        available = PERSONALITY_LIST[:]
     chosen = rng.choice(available)
     return chosen
 
@@ -127,7 +131,7 @@ def _dump_summary(state: dict):
         "rounds": state["round_num"],
         "roles": {str(k): v for k, v in state["roles"].items()},
         "players": [
-            {"id": p["id"], "mbti": p["mbti"], "role": p["role"], "alive": p["id"] in state["alive"]}
+            {"id": p["id"], "personality": p["personality"], "role": p["role"], "alive": p["id"] in state["alive"]}
             for p in state["players"]
         ],
     }
@@ -139,7 +143,7 @@ def _dump_summary(state: dict):
 
 def init_game(state: dict) -> dict:
     rng = random.Random(state["seed"])
-    game_id = f"wolf-v1-{rng.getrandbits(32):08x}"
+    game_id = f"wolf-v2-{rng.getrandbits(32):08x}"
     evtlog_path = os.path.join(GAMES_DIR, f"{game_id}.events.jsonl")
 
     # Remove stale log from previous run (same seed → same game_id)
@@ -150,11 +154,11 @@ def init_game(state: dict) -> dict:
         os.remove(summary_path)
 
     players = []
-    used_mbti = []
+    used_personality = []
     for pid in range(1, PLAYER_COUNT + 1):
-        mbti = _pick_mbti(rng, used_mbti)
-        used_mbti.append(mbti)
-        players.append({"id": pid, "mbti": mbti, "role": "", "alive": True})
+        personality = _pick_personality(rng, used_personality)
+        used_personality.append(personality)
+        players.append({"id": pid, "personality": personality, "role": "", "alive": True})
 
     updates = dict(state)
     updates["game_id"] = game_id
@@ -210,6 +214,15 @@ def assign_roles(state: dict) -> dict:
     updates["_wolves"] = wolves
     updates["_seer_id"] = seer_id
     updates["_witch_id"] = witch_id
+
+    # Load past memories for each player (unless --no-memory)
+    player_memories = {}
+    if not state.get("_no_memory") and state.get("_memory_dir"):
+        memory_dir = state["_memory_dir"]
+        for pid in player_ids:
+            mems = load_memories(pid, memory_dir, exclude_game_id=state.get("game_id", ""))
+            player_memories[pid] = mems
+    updates["_player_memories"] = player_memories
     return updates
 
 
@@ -230,7 +243,8 @@ def night_phase(state: dict) -> dict:
     agents = {}
     for p in state["players"]:
         if p["id"] in state["alive"]:
-            agents[p["id"]] = Agent(p["id"], p["role"], p["mbti"], llm)
+            mems = updates.get("_player_memories", {}).get(p["id"], [])
+            agents[p["id"]] = Agent(p["id"], p["role"], p["personality"], llm, memories=mems)
 
     # Build context
     context_parts = [f"第 {updates['round_num']} 轮夜晚"]
@@ -384,7 +398,7 @@ def night_phase(state: dict) -> dict:
         if died == state.get("night_kill_target") and state.get("first_night"):
             player_info = next((p for p in state["players"] if p["id"] == died), None)
             if player_info:
-                death_agent = Agent(died, player_info["role"], player_info["mbti"], llm)
+                death_agent = Agent(died, player_info["role"], player_info["personality"], llm)
                 will_context = f"你是 {died} 号，身份为【{player_info['role']}】。你被杀了。留下遗言（≤100字）。"
                 will, _ = death_agent.speak([{"role": "system", "content": death_agent.system_prompt},
                                               {"role": "user", "content": will_context}])
@@ -431,7 +445,8 @@ def day_phase(state: dict) -> dict:
     agents = {}
     for p in state["players"]:
         if p["id"] in state["alive"]:
-            agents[p["id"]] = Agent(p["id"], p["role"], p["mbti"], llm)
+            mems = updates.get("_player_memories", {}).get(p["id"], [])
+            agents[p["id"]] = Agent(p["id"], p["role"], p["personality"], llm, memories=mems)
 
     all_messages = list(state["public_messages"])
 
@@ -531,7 +546,8 @@ def _run_vote(state: dict, llm: LLMClient, evtlog: EventLog, revote: bool = Fals
     agents = {}
     for p in state["players"]:
         if p["id"] in state["alive"]:
-            agents[p["id"]] = Agent(p["id"], p["role"], p["mbti"], llm)
+            mems = state.get("_player_memories", {}).get(p["id"], [])
+            agents[p["id"]] = Agent(p["id"], p["role"], p["personality"], llm, memories=mems)
 
     context_parts = [f"第 {state['round_num']} 轮白天投票"]
     if state["public_messages"]:
@@ -607,7 +623,7 @@ def execute_phase(state: dict) -> dict:
     # Last will (daytime execution gets last will)
     player_info = next((p for p in state["players"] if p["id"] == eliminated), None)
     if player_info:
-        agent = Agent(eliminated, player_info["role"], player_info["mbti"], llm)
+        agent = Agent(eliminated, player_info["role"], player_info["personality"], llm)
         will_context = f"你是 {eliminated} 号，身份为【{player_info['role']}】。你被投票出局。留下遗言（≤100字）。"
         will, _ = agent.speak([{"role": "system", "content": agent.system_prompt},
                                 {"role": "user", "content": will_context}])
@@ -652,6 +668,41 @@ def check_winner(state: dict) -> dict:
     return updates
 
 
+def _build_review_context(state: dict, player_id: int) -> str:
+    """Build a review context for post-game reflection."""
+    role = state["roles"].get(player_id, "unknown")
+    alive_at_end = player_id in state["alive"]
+    status = "存活" if alive_at_end else "已淘汰"
+    round_count = state["round_num"]
+    winner = state.get("winner", "unknown")
+    return (
+        f"你（{player_id}号）在游戏中扮演了【{role}】。\n"
+        f"游戏共进行 {round_count} 轮，你最终{status}。\n"
+        f"获胜方：{'狼人' if winner == 'werewolf' else '好人'}阵营。"
+    )
+
+
+def post_game_phase(state: dict) -> dict:
+    """Game over — generate self-reviews and persist memories."""
+    if state.get("_no_memory"):
+        return state
+
+    evtlog = EventLog(state["game_id"], state["event_log_path"])
+    llm = LLMClient()
+    memory_dir = state.get("_memory_dir") or os.path.join(
+        os.path.dirname(state["event_log_path"]))
+
+    for p in state["players"]:
+        agent = Agent(p["id"], p["role"], p["personality"], llm)
+        context = _build_review_context(state, p["id"])
+        reflection = agent.reflect(context)
+        save_memory(state["game_id"], p["id"], p["personality"],
+                    p["role"], reflection, memory_dir)
+
+    evtlog.close()
+    return state
+
+
 def _build_day_context(state: dict, messages: list[dict], current_pid: int) -> str:
     parts = [f"第 {state['round_num']} 轮白天"]
     alive_names = ", ".join(f"{p}号" for p in sorted(state["alive"]))
@@ -670,8 +721,8 @@ def _build_day_context(state: dict, messages: list[dict], current_pid: int) -> s
 
 # --- Graph construction ---
 
-def create_game(seed: int = 42) -> tuple[dict, Any]:
-    """Create and run a complete game. Returns (final_state, graph)."""
+def _build_graph() -> Any:
+    """Build the LangGraph state machine. Returns compiled graph."""
     builder = StateGraph(dict)
 
     builder.add_node("init_game", init_game)
@@ -681,6 +732,7 @@ def create_game(seed: int = 42) -> tuple[dict, Any]:
     builder.add_node("vote_phase", vote_phase)
     builder.add_node("execute_phase", execute_phase)
     builder.add_node("check_winner", check_winner)
+    builder.add_node("post_game_phase", post_game_phase)
 
     builder.set_entry_point("init_game")
 
@@ -692,7 +744,7 @@ def create_game(seed: int = 42) -> tuple[dict, Any]:
     builder.add_edge("vote_phase", "execute_phase")
     builder.add_edge("execute_phase", "check_winner")
 
-    # Conditional: continue or end
+    # Conditional: continue game or end → post_game
     def decide_next(state: dict) -> str:
         if state.get("winner"):
             return "end"
@@ -700,11 +752,22 @@ def create_game(seed: int = 42) -> tuple[dict, Any]:
 
     builder.add_conditional_edges("check_winner", decide_next, {
         "continue": "night_phase",
-        "end": END,
+        "end": "post_game_phase",
     })
+    builder.add_edge("post_game_phase", END)
 
-    graph = builder.compile()
+    return builder.compile()
+
+
+def _build_and_run(initial: dict) -> dict:
+    """Run the graph with a pre-built initial state. Returns final state."""
+    graph = _build_graph()
+    return graph.invoke(initial)
+
+
+def create_game(seed: int = 42) -> tuple[dict, Any]:
+    """Create and run a complete game. Returns (final_state, graph)."""
+    graph = _build_graph()
     initial = default_state(seed)
     final = graph.invoke(initial)
-
     return final, graph

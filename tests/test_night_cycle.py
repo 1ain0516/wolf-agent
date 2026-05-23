@@ -1,13 +1,17 @@
 """Test night cycle logic — role interactions."""
 
+import tempfile
+from unittest.mock import patch
+
 from wolf_agent.engine.game import default_state, init_game, assign_roles
 
 
 def test_night_structure():
     """Verify night state setup is correct (wolves, seer, witch assigned)."""
-    state = default_state(42)
-    state = init_game(state)
-    state = assign_roles(state)
+    with patch("wolf_agent.engine.game.GAMES_DIR", tempfile.mkdtemp()):
+        state = default_state(42)
+        state = init_game(state)
+        state = assign_roles(state)
 
     assert len(state["_wolves"]) == 3
     assert state["_seer_id"] is not None

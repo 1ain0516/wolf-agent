@@ -30,6 +30,9 @@ class SmartMockLLM:
         self._kill_idx += 1
         return {"target": target, "use_antidote": False, "poison_target": None}
 
+    def reflect(self, messages):
+        return "总体上表现尚可，关键判断基本准确，后续需要注意更清晰表达自己的立场。"
+
     def _call(self, messages, temperature, max_tokens):
         return '{"content": "test", "strategy_summary": "test"}'
 

@@ -66,6 +66,9 @@ class LLMClient:
         nums = re.findall(r"\d+", text)
         return int(nums[0]) if nums else 0
 
+    def reflect(self, messages: list[dict]) -> str:
+        return self._call(messages, temperature=0.7, max_tokens=300)
+
     def act(self, messages: list[dict]) -> dict:
         text = self._call(messages, temperature=0.0, max_tokens=100)
         try:
