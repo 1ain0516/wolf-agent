@@ -146,11 +146,39 @@ class StubLLM:
                     pid = nums[0]
                     self._personalities[str(pid)] = pers[0]
 
+    _LAST_WORDS = {
+        "BOSS": "行吧，我认了。但记住我说的方向，别走偏了。",
+        "FAKE": "呵呵，被你们发现了？不过……你们确定出对人了吗？",
+        "THIN-K": "我的分析没错，只是来不及验证了。回头看看投票记录。",
+        "FUCK": "操！你们这群蠢货，等着输吧！",
+        "OJBK": "随便吧，反正我也没认真玩。",
+        "SHIT": "呵，又一个替罪羊。这游戏真他妈可笑。",
+        "ZZZZ": "……",
+        "MALO": "呜呜我被冤枉啦！不过玩得挺开心的嘿嘿～",
+        "JOKE-R": "谢幕表演到此结束。你们猜我到底是不是狼？",
+        "LOVE-R": "没关系，我相信你们会替我报仇的。加油。",
+        "MUM": "大家别自责，这就是游戏。接下来要小心。",
+        "IMSB": "啊？我死了？我还没搞清楚谁是谁呢……",
+        "SOLO": "无所谓。反正我也没指望过你们。",
+        "SEXY": "哎呀，居然舍得杀我？你们会后悔的哦～",
+        "MONK": "尘埃落定。真相自在人心。",
+        "DEAD": "……",
+    }
+
     def speak(self, messages):
         self._call_count += 1
         self._ensure_personalities_from_context(messages)
         pid = self._player_from_context(messages)
         pers = self._get_personality(pid)
+
+        # 遗言检测
+        for m in messages:
+            if m.get("role") == "user":
+                text = m.get("content", "")
+                if "留下遗言" in text or "被杀害了" in text or "被投票出局" in text:
+                    phrase = self._LAST_WORDS.get(pers, "再见。")
+                    return phrase, "遗言"
+
         phrases = self._SPEECH.get(pers, self._SPEECH["OJBK"])
         phrase = phrases[self._call_count % len(phrases)]
         return phrase, f"{pers}风格第{self._call_count}次发言"

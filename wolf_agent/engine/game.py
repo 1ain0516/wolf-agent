@@ -393,21 +393,30 @@ def night_phase(state: dict) -> dict:
                 metadata={"cause": "night_kill", "role": role},
             )
 
-    # Last will for first-night kill (has last will)
+    # Last will for night kills
     for died in deaths:
-        if died == state.get("night_kill_target") and state.get("first_night"):
-            player_info = next((p for p in state["players"] if p["id"] == died), None)
-            if player_info:
-                death_agent = Agent(died, player_info["role"], player_info["personality"], llm)
-                will_context = f"你是 {died} 号，身份为【{player_info['role']}】。你被杀了。留下遗言（≤100字）。"
-                will, _ = death_agent.speak([{"role": "system", "content": death_agent.system_prompt},
-                                              {"role": "user", "content": will_context}])
-                updates["last_will"] = will
-                evtlog.append(
-                    type="message_posted", channel="last_will", visibility="public",
-                    from_player=died, content=will,
-                    strategy_summary="遗言",
-                )
+        player_info = next((p for p in state["players"] if p["id"] == died), None)
+        if player_info:
+            player_mems = state.get("_player_memories", {}).get(str(died), [])
+            death_agent = Agent(died, player_info["role"], player_info["personality"], llm, memories=player_mems)
+            # 构建丰富的遗言上下文
+            alive_players = [p for p in state["players"] if p["id"] in state["alive"] and p["id"] != died]
+            alive_str = ", ".join(f"{p['id']}号" for p in alive_players)
+            will_lines = [
+                f"你是 {died} 号玩家，身份为【{player_info['role']}】，性格是【{player_info['personality']}】。",
+                f"你刚刚被杀害了。当前存活玩家: {alive_str}。",
+                f"请根据你的性格和游戏经历，留下遗言（≤100字）。",
+                f"可以分析局势、指认凶手、或者表达情感。"
+            ]
+            will_context = "\n".join(will_lines)
+            will, _ = death_agent.speak([{"role": "system", "content": death_agent.system_prompt},
+                                          {"role": "user", "content": will_context}])
+            updates["last_will"] = will
+            evtlog.append(
+                type="message_posted", channel="last_will", visibility="public",
+                from_player=died, content=will,
+                strategy_summary="遗言",
+            )
 
     death_msg = ", ".join(death_msg_parts) if death_msg_parts else "无人死亡"
     print(f"  ☀ 天亮了：{death_msg}")
@@ -623,8 +632,17 @@ def execute_phase(state: dict) -> dict:
     # Last will (daytime execution gets last will)
     player_info = next((p for p in state["players"] if p["id"] == eliminated), None)
     if player_info:
-        agent = Agent(eliminated, player_info["role"], player_info["personality"], llm)
-        will_context = f"你是 {eliminated} 号，身份为【{player_info['role']}】。你被投票出局。留下遗言（≤100字）。"
+        player_mems = state.get("_player_memories", {}).get(str(eliminated), [])
+        agent = Agent(eliminated, player_info["role"], player_info["personality"], llm, memories=player_mems)
+        alive_players = [p for p in state["players"] if p["id"] in state["alive"] and p["id"] != eliminated]
+        alive_str = ", ".join(f"{p['id']}号" for p in alive_players)
+        will_lines = [
+            f"你是 {eliminated} 号玩家，身份为【{player_info['role']}】，性格是【{player_info['personality']}】。",
+            f"你刚刚被投票出局了。当前存活玩家: {alive_str}。",
+            f"请根据你的性格和游戏经历，留下遗言（≤100字）。",
+            f"可以分析投票、指认凶手、或者表达情感。"
+        ]
+        will_context = "\n".join(will_lines)
         will, _ = agent.speak([{"role": "system", "content": agent.system_prompt},
                                 {"role": "user", "content": will_context}])
         updates["last_will"] = will
