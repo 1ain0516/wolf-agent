@@ -9,7 +9,7 @@ from datetime import datetime
 import threading
 import time
 
-app = Flask(__name__, static_folder='../web', static_url_path='')
+app = Flask(__name__, static_folder='../web', static_url_path='/static')
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # 路径配置

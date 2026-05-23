@@ -279,7 +279,7 @@ def cmd_stats(args: argparse.Namespace):
 def cmd_web(args: argparse.Namespace):
     """启动 web 界面"""
     try:
-        from wolf_agent.web import app
+        from wolf_agent.web import app, socketio
     except ImportError:
         print("错误: Flask 未安装。请运行: pip install flask", file=sys.stderr)
         sys.exit(1)
@@ -289,7 +289,7 @@ def cmd_web(args: argparse.Namespace):
     print(f"  Wolf Agent v2 — Web 界面")
     print(f"  访问: http://localhost:{port}")
     print(f"{'='*50}\n")
-    app.run(debug=False, port=port, host='127.0.0.1')
+    socketio.run(app, debug=False, port=port, host='127.0.0.1', allow_unsafe_werkzeug=True)
 
 
 def main():
