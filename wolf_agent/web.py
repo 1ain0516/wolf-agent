@@ -17,18 +17,6 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 _web_py_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_web_py_dir)
 
-class LiveStream(io.StringIO):
-    """实时捕获 stdout，写入时同步更新 run 数据中的 live_output"""
-    def __init__(self, run_id):
-        super().__init__()
-        self._run_id = run_id
-
-    def write(self, s):
-        ret = super().write(s)
-        with RUNS_LOCK:
-            if self._run_id in RUNS:
-                RUNS[self._run_id]['live_output'] = self.getvalue()
-        return ret
 GAMES_DIR = Path(os.path.join(_project_root, 'games'))
 
 # Run job 内存存储
@@ -235,25 +223,11 @@ def build_replay_data(game_id):
     }
 
 def run_batch_games(run_id, batch_size, mode, memory_enabled, seed_mode, base_seed):
-    """后台线程，monkey-patch EventLog 实现实时事件推送"""
-    import sys
+    """后台线程运行批量游戏"""
     from wolf_agent.engine.game import default_state, _build_and_run
     from wolf_agent.engine import game as game_module
-    from wolf_agent.events import EventLog
 
     original_llm = game_module.LLMClient
-
-    # Monkey-patch EventLog.append：每次写入事件同步推送到 RUNS
-    _original_append = EventLog.append
-    def _streaming_append(self, type, channel, visibility, **kwargs):
-        evt = _original_append(self, type, channel, visibility, **kwargs)
-        d = {'type': type, 'channel': channel, 'from_player': evt.from_player,
-             'content': evt.content, 'metadata': evt.metadata}
-        with RUNS_LOCK:
-            if run_id in RUNS:
-                RUNS[run_id].setdefault('_live_events', []).append(d)
-        return evt
-    EventLog.append = _streaming_append
 
     with RUNS_LOCK:
         RUNS[run_id]['status'] = 'running'
@@ -268,11 +242,6 @@ def run_batch_games(run_id, batch_size, mode, memory_enabled, seed_mode, base_se
             try:
                 seed = base_seed + i if seed_mode == 'fixed' else int(time.time() * 1000) % 100000 + i
 
-                # 清空上局事件
-                with RUNS_LOCK:
-                    RUNS[run_id]['_live_events'] = []
-                    RUNS[run_id]['_live_players'] = {}
-
                 initial = default_state(seed)
                 initial["_no_memory"] = not memory_enabled
                 initial["_player_memories"] = {}
@@ -281,17 +250,6 @@ def run_batch_games(run_id, batch_size, mode, memory_enabled, seed_mode, base_se
                 game_id = final_state.get('game_id')
                 events = load_events(game_id)
                 summary = load_summary(game_id)
-
-                # 从 summary 提取玩家信息供前端画棋盘
-                players_info = []
-                if summary and 'players' in summary:
-                    for p in summary['players']:
-                        players_info.append({
-                            'id': p['id'], 'personality': p.get('personality'),
-                            'role': p.get('role'), 'alive': p.get('alive', True),
-                        })
-                with RUNS_LOCK:
-                    RUNS[run_id]['_live_players'] = players_info
 
                 result = {
                     'game_id': game_id, 'seed': seed,
@@ -330,9 +288,9 @@ def run_batch_games(run_id, batch_size, mode, memory_enabled, seed_mode, base_se
             RUNS[run_id]['finished_at'] = datetime.utcnow().isoformat() + 'Z'
             RUNS[run_id]['errors'].append({'error': str(e)})
     finally:
-        # P1-3: 恢复原始 LLMClient + EventLog
+        # P1-3: 恢复原始 LLMClient
         game_module.LLMClient = original_llm
-        EventLog.append = _original_append
+
 
 @app.route('/api/debug')
 def debug():
@@ -384,7 +342,7 @@ def create_run():
 
         RUNS[run_id] = {
             'run_id': run_id,
-            'status': 'queued',
+            'status': 'running',
             'mode': mode,
             'total': batch_size,
             'completed': 0,
@@ -406,7 +364,7 @@ def create_run():
 
     return jsonify({
         'run_id': run_id,
-        'status': 'queued',
+        'status': 'running',
         'total': batch_size,
         'completed': 0,
         'failed': 0,
@@ -422,22 +380,6 @@ def get_run(run_id):
             return jsonify({'error': 'Run not found'}), 404
         rdata = dict(RUNS[run_id])
     return jsonify(rdata)
-
-@app.route('/api/runs/<run_id>/live', methods=['GET'])
-def get_run_live(run_id):
-    """获取当前游戏的实时事件和玩家信息（棋盘 + 消息流）"""
-    with RUNS_LOCK:
-        if run_id not in RUNS:
-            return jsonify({'error': 'Run not found'}), 404
-        rdata = RUNS[run_id]
-        return jsonify({
-            'run_id': run_id,
-            'status': rdata['status'],
-            'completed': rdata['completed'],
-            'failed': rdata['failed'],
-            'players': rdata.get('_live_players', []),
-            'events': rdata.get('_live_events', []),
-        })
 
 # ======================================================================
 # v2.2 Replay API

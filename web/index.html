@@ -81,6 +81,11 @@ canvas { flex:1; display:block; }
 .memory-section .title { font-weight:600; color:#d7b969; margin-bottom:6px; font-size:12px; }
 .memory-section .content { font-size:12px; line-height:1.5; color:#e8e6e1; }
 .empty-state { display:flex; align-items:center; justify-content:center; height:100%; color:#aaa89d; font-size:14px; }
+.running-state { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; background:#0a0e27; }
+.running-icon { font-size:64px; animation:pulse 1.5s infinite; }
+.running-title { font-size:18px; font-weight:600; color:#e8e6e1; }
+.running-sub { font-size:13px; color:#aaa89d; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 .winner-banner { padding:16px; text-align:center; border-radius:8px; margin-bottom:12px; font-size:16px; font-weight:700; }
 .winner-wolf { background:linear-gradient(135deg,#7f1d1d,#991b1b); color:#fca5a5; }
 .winner-villager { background:linear-gradient(135deg,#064e3b,#065f46); color:#6ee7b7; }
@@ -150,30 +155,17 @@ canvas { flex:1; display:block; }
 
     <!-- 中间舞台 -->
     <div class="center-stage">
-      <canvas v-if="(isRunning && livePlayers.length > 0) || replayData" ref="gameCanvas" :width="canvasW" :height="canvasH"></canvas>
+      <div v-if="isRunning" class="running-state">
+        <div class="running-icon">🎮</div>
+        <div class="running-title">AI 正在进行对局，完成后自动进入回放</div>
+        <div class="running-sub">{{ runMode === 'real' ? 'Real 模式约需 5-8 分钟，请耐心等待' : 'Stub 模式约需 3-10 秒' }}</div>
+      </div>
+      <canvas v-else-if="replayData" ref="gameCanvas" :width="canvasW" :height="canvasH"></canvas>
       <div v-else class="empty-state">点击"开始游戏"运行对局，或从左侧选择已保存的对局</div>
     </div>
 
-    <!-- 右侧面板：运行中显示实时消息，回放时显示结构化面板 -->
-    <div class="right-panel" v-if="replayData || (isRunning && livePlayers.length > 0)">
-      <!-- 实时运行：简化的消息流 -->
-      <template v-if="isRunning && liveEvents.length > 0">
-        <div class="scene-tabs">
-          <div class="scene-tab active">📡 实时</div>
-        </div>
-        <div class="panel-content">
-          <div v-for="(m, idx) in liveEvents.slice(-20)" :key="idx" class="msg-item">
-            <div class="msg-header">
-              <span class="msg-speaker">{{ m.player_id }}号</span>
-              <span class="msg-badge" :class="'badge-'+getRoleClass(m.role)">{{ roleNames[m.role] || '?' }}</span>
-              <span class="msg-badge" style="background:#b392d6;color:#fff;">{{ getPlayerPers(m.player_id) }}</span>
-            </div>
-            <div class="msg-content">{{ m.content }}</div>
-          </div>
-        </div>
-      </template>
-      <!-- 回放模式 -->
-      <template v-else>
+    <!-- 右侧面板 -->
+    <div class="right-panel" v-if="replayData">
       <div class="scene-tabs">
         <div class="scene-tab" :class="{active:scene==='day'}" @click="scene='day'">☀️ 白天</div>
         <div class="scene-tab" :class="{active:scene==='night'}" @click="scene='night'">🌙 夜晚</div>
@@ -246,7 +238,6 @@ canvas { flex:1; display:block; }
           </div>
         </div>
       </div>
-      </template>
     </div>
   </div>
 
@@ -308,7 +299,7 @@ createApp({
       showSettings: false,
       settings: { batchSize:3, mode:'stub', seedMode:'random', baseSeed:42, memoryEnabled:false, costConfirmed:false },
       runMode: 'stub',
-      isRunning: false, runId: null, runTotal:0, runCompleted:0, runPct:0, runStatus:'', runErrors:[], livePlayers:[], liveEvents:[],
+      isRunning: false, runId: null, runTotal:0, runCompleted:0, runPct:0, runStatus:'', runErrors:[],
       allResults: [],
       savedGames: [],
       selectedGameId: null,
@@ -382,43 +373,16 @@ createApp({
     async pollRun() {
       if (!this.runId) return;
       try {
-        const [res, liveRes] = await Promise.all([
-          fetch(`/api/runs/${this.runId}`),
-          fetch(`/api/runs/${this.runId}/live`),
-        ]);
+        const res = await fetch(`/api/runs/${this.runId}`);
         const s = await res.json();
-        const live = await liveRes.json();
         this.runStatus = s.status;
         this.runCompleted = s.completed + s.failed;
         this.runPct = Math.round((this.runCompleted / s.total) * 100);
         this.allResults = s.results || [];
         this.runErrors = s.errors || [];
 
-        // 实时棋盘：收到玩家数据时画棋盘
-        if (live.players && live.players.length > 0) {
-          this.livePlayers = live.players;
-          // 构建简化的 replayData 供 canvas 使用
-          if (!this.replayData) {
-            this.replayData = { players: live.players, rounds: [], winner: null };
-          } else {
-            this.replayData.players = live.players;
-          }
-          this.$nextTick(() => this.drawBoard());
-        }
-
-        // 实时消息
-        if (live.events && live.events.length > 0) {
-          this.liveEvents = live.events.filter(e => e.type === 'message_posted').map(e => ({
-            player_id: e.from_player,
-            content: e.content,
-            role: this.livePlayers.find(p => p.id === e.from_player)?.role || 'villager',
-          }));
-        }
-
         if (s.status === 'completed' || s.status === 'partial_success' || s.status === 'failed') {
           this.isRunning = false;
-          this.livePlayers = [];
-          this.liveEvents = [];
           if (this.allResults.length > 0) {
             await this.loadSavedGames();
             this.openReplay(this.allResults[0].game_id);
@@ -447,8 +411,7 @@ createApp({
       if (!canvas || !this.replayData) return;
       const ctx = canvas.getContext('2d');
       const w = canvas.width, h = canvas.height;
-      const isLive = this.isRunning;
-      ctx.fillStyle = isLive ? '#0a0e27' : (this.scene === 'night' ? '#1a1a2e' : '#e8d5b7');
+      ctx.fillStyle = this.scene === 'night' ? '#1a1a2e' : '#e8d5b7';
       ctx.fillRect(0, 0, w, h);
 
       const players = this.replayData.players;
@@ -464,16 +427,15 @@ createApp({
 
     drawPlayer(ctx, x, y, player) {
       const size = 28;
-      const isLive = this.isRunning;
       const isNight = this.scene === 'night';
       const roleColors = { werewolf:'#d96f65', seer:'#82a9d9', witch:'#b392d6', villager:'#7bc77e' };
 
       // 身体
-      ctx.fillStyle = isLive ? '#3c3c5c' : (isNight ? '#4a5568' : '#d4a574');
+      ctx.fillStyle = isNight ? '#4a5568' : '#d4a574';
       ctx.fillRect(x - size/2, y - size/2, size, size);
 
       // 头
-      ctx.fillStyle = isLive ? '#5a5a7a' : (isNight ? '#6b7280' : '#e8d5b7');
+      ctx.fillStyle = isNight ? '#6b7280' : '#e8d5b7';
       ctx.beginPath(); ctx.arc(x, y - size/2 - 10, 9, 0, Math.PI*2); ctx.fill();
 
       // 狼耳朵
@@ -509,7 +471,7 @@ createApp({
 
       // 人格标签（底部）
       const persName = this.personalityNames[player.personality] || player.personality || '?';
-      ctx.fillStyle = this.isRunning ? '#b392d6' : (this.scene === 'night' ? '#aaa89d' : '#5a4a3a');
+      ctx.fillStyle = this.scene === 'night' ? '#aaa89d' : '#5a4a3a';
       ctx.font = '9px sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       ctx.fillText(persName, x, y + size/2 + 6);
