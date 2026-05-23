@@ -105,11 +105,14 @@ canvas { flex:1; display:block; }
     <div class="left-rail">
       <!-- 运行控制 -->
       <div v-if="isRunning" class="settings-section">
-        <span class="settings-label">运行中</span>
+        <span class="settings-label">{{ runStatus === 'queued' ? '⏳ 排队中' : runStatus === 'running' ? '🔄 运行中' : runStatus === 'completed' ? '✅ 完成' : '⚠️ ' + runStatus }}</span>
         <div class="progress-bar"><div class="progress-fill" :style="{width:runPct+'%'}"></div></div>
-        <div class="progress-text">{{ runCompleted }}/{{ runTotal }} · {{ runStatus }}</div>
+        <div class="progress-text">{{ runCompleted }}/{{ runTotal }} · {{ runStatus === 'running' && runMode === 'real' ? 'AI正在发言，请耐心等待...' : runStatus }}</div>
         <div v-if="runErrors.length > 0" style="margin-top:8px;font-size:10px;color:#fca5a5;">
-          {{ runErrors.length }} 局失败
+          {{ runErrors.length }} 局失败: {{ runErrors.slice(-1)[0].error }}
+        </div>
+        <div v-if="runStatus === 'failed' && runErrors.length > 0" style="margin-top:4px;font-size:10px;color:#fca5a5;">
+          {{ runErrors[0].error?.substring(0, 100) }}
         </div>
       </div>
 

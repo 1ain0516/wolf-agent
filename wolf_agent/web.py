@@ -219,6 +219,10 @@ def run_batch_games(run_id, batch_size, mode, memory_enabled, seed_mode, base_se
     # P1-3: 保存原始 LLMClient 并在 finally 中恢复
     original_llm = game_module.LLMClient
 
+    with RUNS_LOCK:
+        RUNS[run_id]['status'] = 'running'
+        RUNS[run_id]['started_at'] = datetime.utcnow().isoformat() + 'Z'
+
     try:
         # 设置 stub 模式
         if mode == 'stub':
