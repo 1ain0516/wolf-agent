@@ -1,6 +1,5 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-games/*.events.jsonl
-games/*.summary.json
+games/
 .env
