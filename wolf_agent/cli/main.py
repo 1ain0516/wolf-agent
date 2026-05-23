@@ -12,19 +12,102 @@ import time
 
 
 class StubLLM:
-    """Deterministic mock LLM for --stub mode (no API key needed)."""
+    """人格感知的 mock LLM，各人格有不同发言风格和行为模式"""
+
+    # 16 人格发言模板
+    _SPEECH = {
+        "BOSS": [
+            "我认为局势很清楚，建议按我说的方向走。", "别浪费时间了，直接投票吧。",
+            "我带队，大家跟上就行。", "分析了一圈，结论只有一个——投他。",
+            "你们仔细想想，我的逻辑有没有问题？",
+        ],
+        "FAKE": [
+            "说实话，我也不太确定谁才是狼。", "我观察了几轮，觉得情况有点复杂。",
+            "如果我是狼，我没必要这么高调对吧？", "大家冷静分析，不要被情绪左右。",
+            "我有一个大胆的推测，你们听听看合理不合理。",
+        ],
+        "THIN-K": [
+            "投票数据显示 3 票指向同一人，这不合理。", "基于前两轮的行为，我有理由怀疑他。",
+            "排除法和概率分析指向一个结论。", "先说事实，再谈推测。",
+            "等一下，你的逻辑有个明显的漏洞。",
+        ],
+        "FUCK": [
+            "你TM在搞笑吗？这还用分析？", "投他！这还用想？",
+            "一群废物，这么明显的狼都看不出来？", "别废话了，干就完了！",
+            "你们几个，能不能带点脑子？",
+        ],
+        "OJBK": [
+            "随便吧，你们定。", "我跟票。",
+            "行吧，就这么着。", "嗯，可以。",
+            "无所谓，反正我都行。",
+        ],
+        "SHIT": [
+            "呵呵，又一个骗子。", "你们每个人都在这演戏呢。",
+            "投谁都差不多，反正这局已经凉了。", "我才不信你说的任何一个字。",
+            "知道吗？我最烦你们这种装模作样的人。",
+        ],
+        "ZZZZ": [
+            "过。", "没什么要说的。",
+            "嗯。", "。",
+            "跟着走。",
+        ],
+        "MALO": [
+            "诶诶诶我也觉得！", "对对对，我也感觉是他！",
+            "哇你说的好有道理啊！", "哈哈我觉得反正跟着大佬走就行。",
+            "哎那我跟一个呗！",
+        ],
+        "JOKE-R": [
+            "哈哈，我承认我就是狼，你信吗？", "这个问题嘛……你们猜？",
+            "其实我有一说一，真的，假的。", "今天的演技可以打多少分？",
+            "注意了，我要认真了——开个玩笑。",
+        ],
+        "LOVE-R": [
+            "我相信你说的话，感觉你很真诚。", "大家不要互相猜疑了，我们要团结。",
+            "我也不想投他，但实在是没办法……", "请大家相信自己的直觉。",
+            "每个人都是好人，只是表达方式不一样。",
+        ],
+        "MUM": [
+            "大家别急，慢慢分析。", "我觉得我们要照顾一下新手。",
+            "听我说，不管怎样，团结最重要。", "各位注意，今天发言时间还剩不少。",
+            "不要太紧张，胜负都是常事。",
+        ],
+        "IMSB": [
+            "等等，死者到底是谁来着？", "我有点懵，现在到第几轮了？",
+            "你们在说什么？能不能再讲一遍？", "啊？刚才投过了吗？",
+            "我好像搞混了……谁是女巫？",
+        ],
+        "SOLO": [
+            "我的判断是投他。理由不需要跟你们说。", "我跟你们不一样。",
+            "不需要解释。这就是我的结论。", "走自己的路。",
+            "投票我说了算。",
+        ],
+        "SEXY": [
+            "嗯～我觉得你说得有道理呢～", "这个问题嘛，我们换个角度想想～",
+            "别着急嘛，我们还多的是时间～", "投他的话，我会心疼的哦～",
+            "哥哥姐姐们冷静一下好不好～",
+        ],
+        "MONK": [
+            "我注意到一点细节。", "事实摆在眼前。",
+            "沉默本身就是一种回答。", "我只陈述我所看到的。",
+            "真相不需要修饰。",
+        ],
+        "DEAD": [
+            "。", "。。。",
+            "投。", "嗯。",
+            "过。。",
+        ],
+    }
 
     def __init__(self):
         self.api_key = "stub"
         self.base_url = "http://stub"
         self.model = "stub"
-        self._phrases = [
-            "我认为需要仔细分析局势。",
-            "我怀疑有人行为异常。",
-            "大家注意观察投票模式。",
-            "我觉得可以再观察一轮。",
-        ]
         self._call_count = 0
+        self._personalities = {}    # player_id -> personality_code
+
+    def set_personalities(self, mapping: dict):
+        """设置玩家 -> 人格映射"""
+        self._personalities = mapping
 
     def _alive_from_context(self, messages: list[dict]) -> list[int]:
         for m in messages:
@@ -36,29 +119,95 @@ class StubLLM:
                             return [int(n) for n in nums]
         return []
 
+    def _player_from_context(self, messages: list[dict]) -> int:
+        """提取当前玩家的 ID"""
+        for m in messages:
+            if m.get("role") == "system":
+                for line in m.get("content", "").split("\n"):
+                    nums = re.findall(r"\d+", line)
+                    if nums:
+                        return int(nums[0])
+        return 0
+
+    def _get_personality(self, player_id: int) -> str:
+        if self._personalities:
+            return self._personalities.get(str(player_id), "UNKNOWN")
+        return "UNKNOWN"
+
+    def _ensure_personalities_from_context(self, messages: list[dict]):
+        """从 system prompt 中提取所有玩家的人格映射"""
+        for m in messages:
+            if m.get("role") == "system":
+                content = m.get("content", "")
+                # "你是 3 号玩家，身份为【狼人】。\n你的性格是【BOSS】（掌控者）：..."
+                nums = re.findall(r"你是 (\d+) 号", content)
+                pers = re.findall(r"性格是【(\w+(?:-\w+)?)】", content)
+                if nums and pers:
+                    pid = nums[0]
+                    self._personalities[str(pid)] = pers[0]
+
     def speak(self, messages):
         self._call_count += 1
-        phrase = self._phrases[self._call_count % len(self._phrases)]
-        return phrase, f"第{self._call_count}次发言"
+        self._ensure_personalities_from_context(messages)
+        pid = self._player_from_context(messages)
+        pers = self._get_personality(pid)
+        phrases = self._SPEECH.get(pers, self._SPEECH["OJBK"])
+        phrase = phrases[self._call_count % len(phrases)]
+        return phrase, f"{pers}风格第{self._call_count}次发言"
 
     def vote(self, messages):
         alive = self._alive_from_context(messages)
         if not alive:
             return 1
-        idx = self._call_count % len(alive)
+        pid = self._player_from_context(messages)
+        pers = self._get_personality(pid)
+        # 排除自己
+        others = [a for a in alive if a != pid]
+        if not others:
+            return alive[0]
+        # 高投票独立性的人投自己判断的，低的人跟风
+        from wolf_agent.agents.personality import PERSONALITY_TEMPLATES
+        tpl = PERSONALITY_TEMPLATES.get(pers, {})
+        independence = tpl.get("params", {}).get("vote_independence", 0.5)
+        # 简单地用 call_count 模拟变化
+        idx = (self._call_count + pid) % len(others)
         self._call_count += 1
-        return alive[idx]
+        return others[idx]
 
     def act(self, messages):
         alive = self._alive_from_context(messages)
         if not alive:
             return {"target": 1, "use_antidote": False, "poison_target": None}
-        target = alive[self._call_count % len(alive)]
+        pid = self._player_from_context(messages)
+        others = [a for a in alive if a != pid]
+        if not others:
+            return {"target": alive[0], "use_antidote": False, "poison_target": None}
+        idx = (self._call_count + pid) % len(others)
         self._call_count += 1
-        return {"target": target, "use_antidote": False, "poison_target": None}
+        return {"target": others[idx], "use_antidote": False, "poison_target": None}
 
     def reflect(self, messages):
-        return "作为总结，我今天的发挥还算稳定，关键决策没有问题，但可以更主动一些引导局面。"
+        pid = self._player_from_context(messages)
+        pers = self._get_personality(pid)
+        reflections = {
+            "BOSS": "这局我尽力带队了，结果虽然不是最好，但决策方向没错。",
+            "FAKE": "每个人都在演戏，我只是演得比较真而已。",
+            "THIN-K": "从数据分析来看，我的判断大部分是正确的。",
+            "FUCK": "一群猪队友，带不动。",
+            "OJBK": "随便吧，反正我也没怎么认真玩。",
+            "SHIT": "这游戏就是骗子大集会，没一个可信的。",
+            "ZZZZ": "……",
+            "MALO": "哈哈哈我玩得挺开心的！虽然好像没什么用。",
+            "JOKE-R": "你们分得清我哪句是真的吗？我自己也分不清。",
+            "LOVE-R": "我真心相信大家，虽然可能信错了人……",
+            "MUM": "大家辛苦了，胜负不重要，开心最重要。",
+            "IMSB": "啊？结束了吗？我还没搞清楚谁是谁呢。",
+            "SOLO": "一个人也挺好。反正我不指望别人。",
+            "SEXY": "不管怎样，我依然是全场最靓的崽～",
+            "MONK": "胜败乃兵家常事。真相已现，无需多言。",
+            "DEAD": "。",
+        }
+        return reflections.get(pers, "一局游戏，学到了一些东西。")
 
     def _call(self, messages, temperature, max_tokens):
         return '{"content": "test", "strategy_summary": "test"}'
@@ -73,10 +222,16 @@ class StubLLM:
         return {"use_antidote": False, "poison_target": None}
 
     def wolf_discuss(self, context, packmates):
-        return "我觉得可以杀了目标。"
+        return "今晚的目标已经很明确了，动手吧。"
 
     def night_kill(self, context, targets):
-        return targets[0] if targets else 1
+        """选择击杀目标。targets 已是 non_wolves 列表"""
+        if not targets:
+            return 1
+        # 优先杀编号最小的，但保持变化
+        idx = self._call_count % len(targets)
+        self._call_count += 1
+        return targets[idx]
 
     def night_investigate(self, context, targets):
         return targets[0]
