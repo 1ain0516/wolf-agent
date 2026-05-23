@@ -175,8 +175,12 @@ def build_replay_data(game_id):
             })
         elif e['type'] == 'action_submitted' and e.get('metadata', {}).get('action') == 'kill':
             current_data['night']['kill_target'] = e['metadata'].get('target')
-        elif e['type'] == 'player_eliminated' and e.get('metadata', {}).get('cause') == 'night_kill':
-            current_data['night'].setdefault('deaths', []).append(e.get('from_player'))
+        elif e['type'] == 'player_eliminated':
+            cause = e.get('metadata', {}).get('cause', '')
+            if cause == 'night_kill':
+                current_data['night'].setdefault('deaths', []).append(e.get('from_player'))
+            elif cause == 'execution':
+                current_data['day'].setdefault('deaths', []).append(e.get('from_player'))
 
         # 白天事件
         if e['type'] == 'message_posted' and e.get('channel') in ('announcement', 'public_board', 'last_will'):
@@ -204,10 +208,16 @@ def build_replay_data(game_id):
                 'target': e.get('metadata', {}).get('target'),
             })
         elif e['type'] == 'vote_resolved':
+            meta = e.get('metadata', {})
+            # 从 vote_cast 事件计算票数
+            vote_counts = {}
+            for v in current_data['day'].get('votes', []):
+                t = v['target']
+                vote_counts[t] = vote_counts.get(t, 0) + 1
             current_data['day']['vote_result'] = {
-                'eliminated': e.get('metadata', {}).get('eliminated_player'),
-                'tie': e.get('metadata', {}).get('tie', False),
-                'counts': e.get('metadata', {}).get('vote_counts', {}),
+                'eliminated': meta.get('eliminated'),
+                'tie': meta.get('tie', False),
+                'counts': {str(k): v for k, v in vote_counts.items()},
             }
 
     if current_round > 0:
