@@ -299,7 +299,7 @@ createApp({
       showSettings: false,
       settings: { batchSize:3, mode:'stub', seedMode:'random', baseSeed:42, memoryEnabled:false, costConfirmed:false },
       runMode: 'stub',
-      isRunning: false, runId: null, runTotal:0, runCompleted:0, runPct:0, runStatus:'', runErrors:[],
+      isRunning: false, runId: null, runTotal:0, runCompleted:0, runPct:0, runStatus:'', runErrors:[], _pollStopped: false,
       allResults: [],
       savedGames: [],
       selectedGameId: null,
@@ -341,8 +341,8 @@ createApp({
     async startRun() {
       this.showSettings = false;
       this.runMode = this.settings.mode;
-      this.isRunning = true; this.runCompleted = 0; this.runPct = 0; this.runStatus = 'queued';
-      this.allResults = []; this.runErrors = [];
+      this.isRunning = true; this.runCompleted = 0; this.runPct = 0; this.runStatus = 'running';
+      this.allResults = []; this.runErrors = []; this._pollStopped = false;
 
       try {
         const res = await fetch('/api/runs', {
@@ -371,7 +371,7 @@ createApp({
     },
 
     async pollRun() {
-      if (!this.runId) return;
+      if (!this.runId || this._pollStopped) return;
       try {
         const res = await fetch(`/api/runs/${this.runId}`);
         const s = await res.json();
@@ -382,14 +382,12 @@ createApp({
         this.runErrors = s.errors || [];
 
         if (s.status === 'completed' || s.status === 'partial_success' || s.status === 'failed') {
-          // 最小显示 loading 2 秒，避免一闪而过
-          setTimeout(async () => {
-            this.isRunning = false;
-            if (this.allResults.length > 0) {
-              await this.loadSavedGames();
-              this.openReplay(this.allResults[0].game_id);
-            }
-          }, 2000);
+          this._pollStopped = true;
+          this.isRunning = false;
+          if (this.allResults.length > 0) {
+            await this.loadSavedGames();
+            this.openReplay(this.allResults[0].game_id);
+          }
         } else {
           this.pollTimer = setTimeout(() => this.pollRun(), this.runMode === 'real' ? 2000 : 500);
         }
