@@ -181,6 +181,7 @@ def build_replay_data(game_id):
             current_data['night'].setdefault('messages', []).append({
                 'event_id': e.get('event_id'),
                 'player_id': e.get('from_player'),
+                'role': 'werewolf',
                 'content': e.get('content'),
                 'strategy_summary': e.get('metadata', {}).get('strategy_summary'),
             })
@@ -194,10 +195,18 @@ def build_replay_data(game_id):
             if e['channel'] == 'announcement':
                 current_data['day'].setdefault('announcements', []).append(e.get('content'))
             else:
+                # 查找该玩家的人格
+                p_pers = None
+                if 'players' in summary:
+                    for sp in summary['players']:
+                        if sp['id'] == e.get('from_player'):
+                            p_pers = sp.get('personality')
+                            break
                 current_data['day'].setdefault('messages', []).append({
                     'event_id': e.get('event_id'),
                     'player_id': e.get('from_player'),
                     'role': summary.get('roles', {}).get(str(e.get('from_player'))),
+                    'personality': p_pers,
                     'content': e.get('content'),
                     'strategy_summary': e.get('metadata', {}).get('strategy_summary'),
                 })

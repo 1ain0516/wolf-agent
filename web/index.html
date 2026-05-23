@@ -179,6 +179,7 @@ canvas { flex:1; display:block; }
             <div class="msg-header">
               <span class="msg-speaker">{{ m.player_id }}号</span>
               <span class="msg-badge" :class="'badge-'+getRoleClass(m.role)">{{ roleNames[m.role] }}</span>
+              <span class="msg-badge" style="background:#b392d6;color:#fff;">{{ getPlayerPers(m.player_id) }}</span>
             </div>
             <div class="msg-content">{{ m.content }}</div>
             <div class="msg-summary" v-if="m.strategy_summary">{{ m.strategy_summary }}</div>
@@ -205,6 +206,7 @@ canvas { flex:1; display:block; }
             <div class="msg-header">
               <span class="msg-speaker">{{ m.player_id }}号</span>
               <span class="msg-badge badge-wolf">🐺 狼人</span>
+              <span class="msg-badge" style="background:#b392d6;color:#fff;">{{ getPlayerPers(m.player_id) }}</span>
             </div>
             <div class="msg-content">{{ m.content }}</div>
             <div class="msg-summary" v-if="m.strategy_summary">{{ m.strategy_summary }}</div>
@@ -319,6 +321,11 @@ createApp({
       if (role === 'seer') return 'seer';
       if (role === 'witch') return 'witch';
       return 'villager';
+    },
+    getPlayerPers(playerId) {
+      if (!this.replayData) return '';
+      const p = this.replayData.players.find(x => x.id === playerId);
+      return p ? (this.personalityNames[p.personality] || p.personality || '') : '';
     },
     async loadSavedGames() {
       try { const r = await fetch('/api/games'); this.savedGames = await r.json(); } catch(e){}
@@ -466,6 +473,18 @@ createApp({
         ctx.strokeStyle = '#d7b969'; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.arc(x, y, size/2 + 8, 0, Math.PI*2); ctx.stroke();
       }
+
+      // 人格标签（底部）
+      const persName = this.personalityNames[player.personality] || player.personality || '?';
+      ctx.fillStyle = this.scene === 'night' ? '#aaa89d' : '#5a4a3a';
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(persName, x, y + size/2 + 6);
+
+      // 角色标签（人格下方）
+      ctx.fillStyle = roleColors[player.role] || '#aaa89d';
+      ctx.font = 'bold 8px sans-serif';
+      ctx.fillText(this.roleNames[player.role] || '?', x, y + size/2 + 18);
     },
   },
   watch: {
