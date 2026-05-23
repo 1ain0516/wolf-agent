@@ -12,7 +12,10 @@ app = Flask(__name__, static_folder='../web', static_url_path='')
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # 使用绝对路径确保无论从哪个目录启动都能找到 games 目录
-GAMES_DIR = Path(__file__).parent.parent / 'games'
+import os
+_web_py_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_web_py_dir)
+GAMES_DIR = Path(_project_root) / 'games'
 
 # Phase 映射：day/night -> 具体阶段列表
 PHASE_MAPPING = {
@@ -117,6 +120,15 @@ def get_phase_events(events, phase_type):
 
     return filtered
 
+@app.route('/api/debug')
+def debug():
+    """调试端点"""
+    return jsonify({
+        'GAMES_DIR': str(GAMES_DIR),
+        'GAMES_DIR.exists()': GAMES_DIR.exists(),
+        'files': [f.name for f in GAMES_DIR.glob('*.events.jsonl')] if GAMES_DIR.exists() else [],
+    })
+
 @app.route('/')
 def index():
     """主页"""
@@ -125,7 +137,18 @@ def index():
 @app.route('/api/games')
 def list_games():
     """列出所有对局"""
+    import sys
+    print(f"DEBUG: GAMES_DIR={GAMES_DIR}", file=sys.stderr, flush=True)
+    print(f"DEBUG: GAMES_DIR.exists()={GAMES_DIR.exists()}", file=sys.stderr, flush=True)
+
+    if GAMES_DIR.exists():
+        files = list(GAMES_DIR.glob('*.events.jsonl'))
+        print(f"DEBUG: found {len(files)} .events.jsonl files", file=sys.stderr, flush=True)
+        for f in files[:3]:
+            print(f"DEBUG:   - {f.name}", file=sys.stderr, flush=True)
+
     if not GAMES_DIR.exists():
+        print(f"DEBUG: GAMES_DIR does not exist, returning empty list", file=sys.stderr, flush=True)
         return jsonify([])
 
     games = []
@@ -133,16 +156,25 @@ def list_games():
         # 正确提取 game_id：wolf-v2-a3b1799d.events.jsonl -> wolf-v2-a3b1799d
         game_id = path.name.replace('.events.jsonl', '')
         summary_path = GAMES_DIR / f'{game_id}.summary.json'
+        print(f"DEBUG: checking {summary_path}", file=sys.stderr, flush=True)
         if summary_path.exists():
             with open(summary_path) as f:
                 summary = json.load(f)
+                # 计算事件数
+                event_count = 0
+                events_path = GAMES_DIR / f'{game_id}.events.jsonl'
+                if events_path.exists():
+                    with open(events_path) as ef:
+                        event_count = sum(1 for line in ef if line.strip())
+
                 games.append({
                     'game_id': game_id,
                     'winner': summary.get('winner'),
                     'rounds': summary.get('rounds'),
-                    'events': summary.get('event_count'),
+                    'events': event_count,
                     'timestamp': summary.get('timestamp'),
                 })
+    print(f"DEBUG: returning {len(games)} games", file=sys.stderr, flush=True)
     return jsonify(games)
 
 @app.route('/api/games/<game_id>')

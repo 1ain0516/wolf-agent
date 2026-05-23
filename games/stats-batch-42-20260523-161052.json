@@ -1,0 +1,39 @@
+{
+  "winner_stats": {
+    "werewolf": {
+      "wins": 4,
+      "win_rate": 0.8
+    },
+    "villager": {
+      "wins": 1,
+      "win_rate": 0.2
+    }
+  },
+  "round_stats": {
+    "mean": 5.8,
+    "min": 3,
+    "max": 7,
+    "std": 1.6
+  },
+  "role_survival": {
+    "villager": {
+      "mean": 2.2
+    },
+    "werewolf": {
+      "mean": 2.73
+    },
+    "seer": {
+      "mean": 1.4
+    },
+    "witch": {
+      "mean": 3.4
+    }
+  },
+  "batch": {
+    "total_games": 5,
+    "seed": 42,
+    "timestamp": "2026-05-23T08:10:52Z",
+    "memory_enabled": false,
+    "memory_dir": "games/"
+  }
+}
