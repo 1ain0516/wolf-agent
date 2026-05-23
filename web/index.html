@@ -150,7 +150,10 @@ canvas { flex:1; display:block; }
 
     <!-- 中间舞台 -->
     <div class="center-stage">
-      <canvas v-if="replayData" ref="gameCanvas" :width="canvasW" :height="canvasH"></canvas>
+      <div v-if="isRunning && liveOutput" style="flex:1;overflow-y:auto;font-family:monospace;font-size:12px;padding:16px;white-space:pre-wrap;color:#aaa;" ref="livePanel">
+        {{ liveOutput }}
+      </div>
+      <canvas v-else-if="replayData" ref="gameCanvas" :width="canvasW" :height="canvasH"></canvas>
       <div v-else class="empty-state">点击"开始游戏"运行对局，或从左侧选择已保存的对局</div>
     </div>
 
@@ -287,7 +290,7 @@ createApp({
       showSettings: false,
       settings: { batchSize:3, mode:'stub', seedMode:'random', baseSeed:42, memoryEnabled:false, costConfirmed:false },
       runMode: 'stub',
-      isRunning: false, runId: null, runTotal:0, runCompleted:0, runPct:0, runStatus:'', runErrors:[],
+      isRunning: false, runId: null, runTotal:0, runCompleted:0, runPct:0, runStatus:'', runErrors:[], liveOutput:'',
       allResults: [],
       savedGames: [],
       selectedGameId: null,
@@ -356,22 +359,34 @@ createApp({
     async pollRun() {
       if (!this.runId) return;
       try {
-        const res = await fetch(`/api/runs/${this.runId}`);
+        const [res, liveRes] = await Promise.all([
+          fetch(`/api/runs/${this.runId}`),
+          fetch(`/api/runs/${this.runId}/live`),
+        ]);
         const s = await res.json();
+        const live = await liveRes.json();
         this.runStatus = s.status;
         this.runCompleted = s.completed + s.failed;
         this.runPct = Math.round((this.runCompleted / s.total) * 100);
         this.allResults = s.results || [];
         this.runErrors = s.errors || [];
+        this.liveOutput = live.live_output || '';
+
+        // 自动滚动实时输出
+        this.$nextTick(() => {
+          const panel = this.$refs.livePanel;
+          if (panel) panel.scrollTop = panel.scrollHeight;
+        });
 
         if (s.status === 'completed' || s.status === 'partial_success' || s.status === 'failed') {
           this.isRunning = false;
+          this.liveOutput = '';
           if (this.allResults.length > 0) {
             await this.loadSavedGames();
             this.openReplay(this.allResults[0].game_id);
           }
         } else {
-          this.pollTimer = setTimeout(() => this.pollRun(), 500);
+          this.pollTimer = setTimeout(() => this.pollRun(), this.runMode === 'real' ? 2000 : 500);
         }
       } catch(e) {
         this.pollTimer = setTimeout(() => this.pollRun(), 1000);

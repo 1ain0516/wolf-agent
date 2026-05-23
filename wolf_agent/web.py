@@ -212,11 +212,11 @@ def build_replay_data(game_id):
     }
 
 def run_batch_games(run_id, batch_size, mode, memory_enabled, seed_mode, base_seed):
-    """后台线程运行批量游戏"""
+    """后台线程运行批量游戏，捕获实时输出"""
+    import sys, io
     from wolf_agent.engine.game import default_state, _build_and_run
     from wolf_agent.engine import game as game_module
 
-    # P1-3: 保存原始 LLMClient 并在 finally 中恢复
     original_llm = game_module.LLMClient
 
     with RUNS_LOCK:
@@ -224,12 +224,16 @@ def run_batch_games(run_id, batch_size, mode, memory_enabled, seed_mode, base_se
         RUNS[run_id]['started_at'] = datetime.utcnow().isoformat() + 'Z'
 
     try:
-        # 设置 stub 模式
         if mode == 'stub':
             from wolf_agent.cli.main import StubLLM
             game_module.LLMClient = StubLLM
 
         for i in range(batch_size):
+            # 每局游戏捕获 stdout 到 StringIO
+            live_buf = io.StringIO()
+            old_stdout = sys.stdout
+            sys.stdout = live_buf
+
             try:
                 seed = base_seed + i if seed_mode == 'fixed' else int(time.time() * 1000) % 100000 + i
 
@@ -237,7 +241,9 @@ def run_batch_games(run_id, batch_size, mode, memory_enabled, seed_mode, base_se
                 initial["_no_memory"] = not memory_enabled
                 initial["_player_memories"] = {}
 
+                # 运行游戏时输出被捕获到 live_buf
                 final_state = _build_and_run(initial)
+                live_output = live_buf.getvalue()
 
                 game_id = final_state.get('game_id')
                 events = load_events(game_id)
@@ -256,16 +262,18 @@ def run_batch_games(run_id, batch_size, mode, memory_enabled, seed_mode, base_se
                     RUNS[run_id]['results'].append(result)
                     RUNS[run_id]['completed'] += 1
                     RUNS[run_id]['current_index'] = i + 1
+                    RUNS[run_id]['live_output'] = live_output
 
             except Exception as e:
                 with RUNS_LOCK:
                     RUNS[run_id]['failed'] += 1
                     RUNS[run_id]['errors'].append({
-                        'game_index': i,
-                        'seed': base_seed + i if seed_mode == 'fixed' else None,
-                        'error': str(e),
+                        'game_index': i, 'seed': base_seed + i if seed_mode == 'fixed' else None, 'error': str(e),
                     })
                     RUNS[run_id]['current_index'] = i + 1
+                    RUNS[run_id]['live_output'] = live_buf.getvalue() + f"\n[错误] {e}"
+            finally:
+                sys.stdout = old_stdout
 
         # 最终状态
         with RUNS_LOCK:
@@ -368,12 +376,27 @@ def create_run():
 
 @app.route('/api/runs/<run_id>', methods=['GET'])
 def get_run(run_id):
-    """获取 run 状态"""
+    """获取 run 状态（含实时输出）"""
     with RUNS_LOCK:
         if run_id not in RUNS:
             return jsonify({'error': 'Run not found'}), 404
         rdata = dict(RUNS[run_id])
     return jsonify(rdata)
+
+@app.route('/api/runs/<run_id>/live', methods=['GET'])
+def get_run_live(run_id):
+    """获取当前游戏的实时输出"""
+    with RUNS_LOCK:
+        if run_id not in RUNS:
+            return jsonify({'error': 'Run not found'}), 404
+        return jsonify({
+            'run_id': run_id,
+            'status': RUNS[run_id]['status'],
+            'current_index': RUNS[run_id]['current_index'],
+            'completed': RUNS[run_id]['completed'],
+            'failed': RUNS[run_id]['failed'],
+            'live_output': RUNS[run_id].get('live_output', ''),
+        })
 
 # ======================================================================
 # v2.2 Replay API
