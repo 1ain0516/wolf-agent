@@ -106,6 +106,17 @@ def _log_phase(evtlog: EventLog, phase: str, round_num: int):
     )
 
 
+def _log_progress(evtlog: EventLog, content: str, player_id: int | None = None, **metadata):
+    evtlog.append(
+        type="progress",
+        channel="system",
+        visibility="public",
+        from_player=player_id,
+        content=content,
+        metadata=metadata or None,
+    )
+
+
 def _check_winner_condition(state: dict) -> str | None:
     alive = set(state["alive"])
     wolves = set(state["_wolves"]) & alive  # only alive wolves count
@@ -171,11 +182,12 @@ def init_game(state: dict) -> dict:
 def assign_roles(state: dict) -> dict:
     rng = random.Random(state["seed"] + 1)
     player_ids = [p["id"] for p in state["players"]]
+    personalities = {p["id"]: p.get("personality") for p in state["players"]}
     roles = list(ROLE_DISTRIBUTION)
     rng.shuffle(roles)
 
     # Open event log
-    evtlog = EventLog(state["game_id"], state["event_log_path"])
+    evtlog = _open_eventlog(state)
     evtlog.append(type="game_started", channel="system", visibility="public",
                   metadata={"seed": state["seed"], "player_count": PLAYER_COUNT})
 
@@ -197,7 +209,7 @@ def assign_roles(state: dict) -> dict:
             channel="system",
             visibility=f"role_private:{pid}",
             from_player=pid,
-            metadata={"role": role},
+            metadata={"role": role, "personality": personalities.get(pid)},
         )
 
     # Update player roles
@@ -205,7 +217,7 @@ def assign_roles(state: dict) -> dict:
     for p in players:
         p["role"] = assignments[p["id"]]
 
-    evtlog.close()
+    _close_eventlog(evtlog, state)
 
     updates = dict(state)
     updates["phase"] = "ASSIGN_ROLES"
@@ -228,14 +240,14 @@ def assign_roles(state: dict) -> dict:
 
 def night_phase(state: dict) -> dict:
     rng = random.Random(state["seed"] + state["round_num"] * 10 + 2)
-    evtlog = EventLog(state["game_id"], state["event_log_path"])
+    evtlog = _open_eventlog(state)
     llm = LLMClient()
 
     updates = dict(state)
     updates["round_num"] = state["round_num"] + 1
     updates["phase"] = "NIGHT"
     _log_phase(evtlog, "NIGHT", updates["round_num"])
-    evtlog.close()
+    _close_eventlog(evtlog, state)
 
     print(f"  {'='*35}\n  【第 {updates['round_num']} 轮 夜晚】\n  {'='*35}")
 
@@ -263,7 +275,7 @@ def night_phase(state: dict) -> dict:
     kill_target = None
     kill_initiator = None
 
-    evtlog = EventLog(state["game_id"], state["event_log_path"])
+    evtlog = _open_eventlog(state)
     _log_phase(evtlog, "WOLF_DEN", updates["round_num"])
 
     if alive_wolves:
@@ -274,6 +286,7 @@ def night_phase(state: dict) -> dict:
             for wid in alive_wolves:
                 agent = agents[wid]
                 packmates = [w for w in alive_wolves if w != wid]
+                _log_progress(evtlog, f"Player {wid} is discussing with the wolf pack...", wid, action="wolf_discuss")
                 speech = agent.wolf_discuss(context, packmates)
                 evtlog.append(
                     type="message_posted", channel="wolf_den", visibility="wolf_den",
@@ -285,6 +298,7 @@ def night_phase(state: dict) -> dict:
         wolf_votes = {}
         for wid in alive_wolves:
             agent = agents[wid]
+            _log_progress(evtlog, f"Player {wid} is choosing a night target...", wid, action="night_kill")
             target = agent.night_kill(context, non_wolves)
             wolf_votes[wid] = target
 
@@ -299,6 +313,7 @@ def night_phase(state: dict) -> dict:
 
     if kill_target:
         print(f"  → 狼人决定杀死 {kill_target} 号")
+        _log_progress(evtlog, f"狼人决定杀死 {kill_target} 号", player_id=None, action="wolf_kill_decision", target=kill_target)
         evtlog.append(
             type="action_submitted", channel="wolf_den", visibility="wolf_den",
             from_player=kill_initiator,
@@ -312,6 +327,7 @@ def night_phase(state: dict) -> dict:
     if seer and seer in state["alive"]:
         agent = agents[seer]
         seer_targets = [p for p in state["alive"] if p != seer]
+        _log_progress(evtlog, f"Player {seer} is investigating...", seer, action="seer_investigate")
         print(f"  预言家查验中...", end=" ")
         target = agent.night_investigate(context, seer_targets)
         is_wolf = target in state["_wolves"]
@@ -345,6 +361,7 @@ def night_phase(state: dict) -> dict:
         can_poison = not poison_used
 
         print(f"  女巫思考中...")
+        _log_progress(evtlog, f"Player {witch} is deciding witch action...", witch, action="witch_act")
         witch_decision = agent.witch_act(context, kill_target, can_save, can_poison)
         use_antidote = witch_decision.get("use_antidote", False)
         poison_target = witch_decision.get("poison_target")
@@ -409,6 +426,7 @@ def night_phase(state: dict) -> dict:
                 f"可以分析局势、指认凶手、或者表达情感。"
             ]
             will_context = "\n".join(will_lines)
+            _log_progress(evtlog, f"Player {died} is leaving last words...", died, action="last_will")
             will, _ = death_agent.speak([{"role": "system", "content": death_agent.system_prompt},
                                           {"role": "user", "content": will_context}])
             updates["last_will"] = will
@@ -427,13 +445,13 @@ def night_phase(state: dict) -> dict:
         type="phase_resolved", channel="system", visibility="public",
         metadata={"phase": "NIGHT", "deaths": deaths},
     )
-    evtlog.close()
+    _close_eventlog(evtlog, state)
 
     return updates
 
 
 def day_phase(state: dict) -> dict:
-    evtlog = EventLog(state["game_id"], state["event_log_path"])
+    evtlog = _open_eventlog(state)
     llm = LLMClient()
 
     updates = dict(state)
@@ -471,6 +489,7 @@ def day_phase(state: dict) -> dict:
                 continue
 
             context = _build_day_context(state, all_messages, pid)
+            _log_progress(evtlog, f"Player {pid} is speaking...", pid, action="day_speech")
             content, strategy = agent.speak(context)
             if not content:
                 continue
@@ -493,6 +512,7 @@ def day_phase(state: dict) -> dict:
             agent = agents[pid]
             context = _build_day_context(state, all_messages, pid)
             context += "\n\n现在是自由辩论时间。"
+            _log_progress(evtlog, f"Player {pid} is debating...", pid, action="debate_speech")
             content, strategy = agent.speak(context)
             if not content:
                 continue
@@ -510,12 +530,12 @@ def day_phase(state: dict) -> dict:
     updates["public_messages"] = all_messages
     updates["speech_count"] = speech_count
 
-    evtlog.close()
+    _close_eventlog(evtlog, state)
     return updates
 
 
 def vote_phase(state: dict) -> dict:
-    evtlog = EventLog(state["game_id"], state["event_log_path"])
+    evtlog = _open_eventlog(state)
     llm = LLMClient()
 
     updates = dict(state)
@@ -544,7 +564,7 @@ def vote_phase(state: dict) -> dict:
     updates["votes"] = votes
     updates["eliminated_today"] = eliminated
 
-    evtlog.close()
+    _close_eventlog(evtlog, state)
     return updates
 
 
@@ -569,6 +589,7 @@ def _run_vote(state: dict, llm: LLMClient, evtlog: EventLog, revote: bool = Fals
     for pid in alive:
         agent = agents[pid]
         candidates = [p for p in alive if p != pid]
+        _log_progress(evtlog, f"Player {pid} is voting...", pid, action="vote")
         target = agent.vote(context, candidates)
         if target in candidates:
             votes[pid] = target
@@ -597,7 +618,7 @@ def _run_vote(state: dict, llm: LLMClient, evtlog: EventLog, revote: bool = Fals
 
 
 def execute_phase(state: dict) -> dict:
-    evtlog = EventLog(state["game_id"], state["event_log_path"])
+    evtlog = _open_eventlog(state)
     llm = LLMClient()
 
     updates = dict(state)
@@ -610,7 +631,7 @@ def execute_phase(state: dict) -> dict:
             type="message_posted", channel="announcement", visibility="public",
             content="今天平票，无人出局。",
         )
-        evtlog.close()
+        _close_eventlog(evtlog, state)
         return updates
 
     # Eliminate player
@@ -643,6 +664,7 @@ def execute_phase(state: dict) -> dict:
             f"可以分析投票、指认凶手、或者表达情感。"
         ]
         will_context = "\n".join(will_lines)
+        _log_progress(evtlog, f"Player {eliminated} is leaving last words...", eliminated, action="last_will")
         will, _ = agent.speak([{"role": "system", "content": agent.system_prompt},
                                 {"role": "user", "content": will_context}])
         updates["last_will"] = will
@@ -652,12 +674,12 @@ def execute_phase(state: dict) -> dict:
             strategy_summary="遗言",
         )
 
-    evtlog.close()
+    _close_eventlog(evtlog, state)
     return updates
 
 
 def check_winner(state: dict) -> dict:
-    evtlog = EventLog(state["game_id"], state["event_log_path"])
+    evtlog = _open_eventlog(state)
     updates = dict(state)
     updates["phase"] = "CHECK_WINNER"
 
@@ -678,7 +700,7 @@ def check_winner(state: dict) -> dict:
     else:
         _log_phase(evtlog, "NIGHT_PREP", state["round_num"])
 
-    evtlog.close()
+    _close_eventlog(evtlog, state)
 
     if winner:
         _dump_summary(updates)
@@ -705,7 +727,7 @@ def post_game_phase(state: dict) -> dict:
     if state.get("_no_memory"):
         return state
 
-    evtlog = EventLog(state["game_id"], state["event_log_path"])
+    evtlog = _open_eventlog(state)
     llm = LLMClient()
     memory_dir = state.get("_memory_dir") or os.path.join(
         os.path.dirname(state["event_log_path"]))
@@ -713,11 +735,12 @@ def post_game_phase(state: dict) -> dict:
     for p in state["players"]:
         agent = Agent(p["id"], p["role"], p["personality"], llm)
         context = _build_review_context(state, p["id"])
+        _log_progress(evtlog, f"Player {p['id']} is writing post-game reflection...", p["id"], action="post_game_reflect")
         reflection = agent.reflect(context)
         save_memory(state["game_id"], p["id"], p["personality"],
                     p["role"], reflection, memory_dir)
 
-    evtlog.close()
+    _close_eventlog(evtlog, state)
     return state
 
 
@@ -735,6 +758,23 @@ def _build_day_context(state: dict, messages: list[dict], current_pid: int) -> s
             parts.append(f"  {m['from']}号: {m['content'][:120]}")
 
     return "\n".join(parts)
+
+
+def _open_eventlog(state: dict) -> EventLog:
+    evtlog = state.get("_event_log")
+    if evtlog is not None:
+        return evtlog
+    evtlog = EventLog(state["game_id"], state["event_log_path"])
+    observer = state.get("_observer")
+    if observer is not None:
+        evtlog.add_observer(observer)
+    return evtlog
+
+
+def _close_eventlog(evtlog: EventLog, state: dict) -> None:
+    """Close eventlog only if it's not the injected one (injected stays open for observer)."""
+    if evtlog is not state.get("_event_log"):
+        evtlog.close()
 
 
 # --- Graph construction ---
@@ -777,8 +817,15 @@ def _build_graph() -> Any:
     return builder.compile()
 
 
-def _build_and_run(initial: dict) -> dict:
-    """Run the graph with a pre-built initial state. Returns final state."""
+def _build_and_run(initial: dict, event_log: EventLog | None = None, observer = None) -> dict:
+    """Run the graph with a pre-built initial state. Returns final state.
+    event_log: external EventLog (already created with observer).
+    observer: BroadcastObserver to attach to internally-created EventLogs.
+    """
+    if event_log is not None:
+        initial["_event_log"] = event_log
+    if observer is not None:
+        initial["_observer"] = observer
     graph = _build_graph()
     return graph.invoke(initial)
 

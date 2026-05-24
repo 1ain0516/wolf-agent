@@ -1,14 +1,17 @@
 """Web 界面 — v2.2-alpha 游戏验证页（run job + 回放）"""
 import json
 import os
+import queue
 import uuid
 from pathlib import Path
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, Response, send_from_directory, stream_with_context
 from flask_socketio import SocketIO, emit, join_room
 from datetime import datetime
 import threading
 import io
 import time
+
+from wolf_agent.events import BroadcastObserver, EventLog
 
 app = Flask(__name__, static_folder='../web', static_url_path='/static')
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -22,6 +25,55 @@ GAMES_DIR = Path(os.path.join(_project_root, 'games'))
 # Run job 内存存储
 RUNS = {}
 RUNS_LOCK = threading.Lock()
+
+# v2.3: 实时观战观察者注册表
+LIVE_OBSERVERS: dict[str, BroadcastObserver] = {}
+
+
+def run_single_game(initial_state: dict, game_id: str, observer: BroadcastObserver,
+                    mode: str = "stub", api_key: str = "", base_url: str = "", model_name: str = ""):
+    """在后台线程中运行单局游戏。observer 已由调用方注册到 LIVE_OBSERVERS。"""
+    from wolf_agent.engine.game import _build_and_run
+    import wolf_agent.engine.game as game_module
+
+    original_llm = game_module.LLMClient
+    _old_env = {}
+    api_key = (api_key or "").strip()
+    base_url = (base_url or "").strip()
+    model_name = (model_name or "").strip()
+
+    try:
+        if mode == "stub":
+            from wolf_agent.cli.main import StubLLM
+            game_module.LLMClient = StubLLM
+        else:
+            # Real 模式：用前端传来的 API 配置临时覆盖环境变量
+            if not api_key and not os.environ.get("DEEPSEEK_API_KEY", "").strip():
+                raise ValueError("Real mode requires an API Key. Set it in Web settings or DEEPSEEK_API_KEY.")
+            if api_key:
+                _old_env["DEEPSEEK_API_KEY"] = os.environ.get("DEEPSEEK_API_KEY", "")
+                os.environ["DEEPSEEK_API_KEY"] = api_key
+            if base_url:
+                _old_env["DEEPSEEK_BASE_URL"] = os.environ.get("DEEPSEEK_BASE_URL", "")
+                os.environ["DEEPSEEK_BASE_URL"] = base_url
+            if model_name:
+                _old_env["DEEPSEEK_MODEL"] = os.environ.get("DEEPSEEK_MODEL", "")
+                os.environ["DEEPSEEK_MODEL"] = model_name
+        _build_and_run(initial_state, observer=observer)
+    except Exception as e:
+        observer.error(f"{type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        game_module.LLMClient = original_llm
+        # 恢复环境变量
+        for k, v in _old_env.items():
+            if v:
+                os.environ[k] = v
+            else:
+                os.environ.pop(k, None)
+        observer.finish()
+        threading.Timer(30, lambda gid=game_id: LIVE_OBSERVERS.pop(gid, None)).start()
 
 # Phase 映射：day/night -> 具体阶段列表
 PHASE_MAPPING = {
@@ -611,6 +663,139 @@ def on_request_memories(data):
         'player_id': player_id,
         'memories': player_memories,
     })
+
+# ======================================================================
+# v2.3 实时观战 API
+# ======================================================================
+
+@app.route('/api/games/live', methods=['POST'])
+def start_live_game():
+    """启动单局游戏（带实时 SSE 推送）"""
+    import random as _random
+    from wolf_agent.engine.game import default_state
+
+    data = request.get_json() or {}
+    mode = data.get('mode', 'stub')
+    seed = data.get('seed') or int(time.time() * 1000) % 100000
+    memory_enabled = data.get('memory_enabled', False)
+    api_key = (data.get('api_key') or '').strip()
+    base_url = (data.get('base_url') or '').strip()
+    model_name = (data.get('model') or '').strip()
+
+    if mode not in ('stub', 'real'):
+        return jsonify({'error': 'Mode must be stub or real'}), 400
+    if mode == 'real' and not api_key and not os.environ.get("DEEPSEEK_API_KEY", "").strip():
+        return jsonify({'error': 'Real 模式需要 API Key。请在设置里填写 API Key，或设置 DEEPSEEK_API_KEY。'}), 400
+
+    initial = default_state(seed)
+    initial["_no_memory"] = not memory_enabled
+    initial["_player_memories"] = {}
+
+    # Pre-compute game_id (same algorithm as init_game node)
+    rng = _random.Random(seed)
+    game_id = f"wolf-v2-{rng.getrandbits(32):08x}"
+
+    # 在线程启动前创建 observer 并注册，消除竞态
+    observer = BroadcastObserver()
+    LIVE_OBSERVERS[game_id] = observer
+
+    t = threading.Thread(
+        target=run_single_game,
+        args=(initial, game_id, observer, mode, api_key, base_url, model_name),
+        daemon=True,
+    )
+    t.start()
+
+    return jsonify({
+        'game_id': game_id,
+        'status': 'running',
+        'stream_url': f'/api/games/{game_id}/stream',
+    }), 201
+
+
+@app.route('/api/games/<game_id>/stream')
+def stream_game(game_id):
+    """SSE 端点：实时推送游戏事件。?delay_ms=N 控制事件间隔（默认 80ms）。"""
+    observer = LIVE_OBSERVERS.get(game_id)
+    if not observer:
+        return jsonify({'error': 'game not running or already finished', 'replay_available': True}), 404
+
+    last_event_id = request.headers.get('Last-Event-ID') or request.args.get('last_event_id')
+    delay_ms = request.args.get('delay_ms', type=int, default=80)
+    client_queue = observer.subscribe(last_event_id)
+
+    def generate():
+        try:
+            while True:
+                try:
+                    evt = client_queue.get(timeout=30)
+                except queue.Empty:
+                    yield "event: heartbeat\ndata: {}\n\n"
+                    continue
+                if evt is None:
+                    yield "event: game_end\ndata: {}\n\n"
+                    break
+                if isinstance(evt, tuple) and evt[0] == "error":
+                    import json
+                    yield f"event: game_error\ndata: {json.dumps({'error': evt[1]})}\n\n"
+                    continue
+                yield f"id: {evt.event_id}\ndata: {evt.to_json()}\n\n"
+                if delay_ms > 0:
+                    time.sleep(delay_ms / 1000.0)
+        finally:
+            observer.unsubscribe(client_queue)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+        },
+    )
+
+
+@app.route('/api/games/<game_id>/events')
+def get_game_events(game_id):
+    """返回完整事件列表（供时间轴回放使用）"""
+    events = load_events(game_id)
+    if not events:
+        return jsonify({'error': 'Game not found'}), 404
+    summary = load_summary(game_id)
+    return jsonify({
+        'game_id': game_id,
+        'events': events,
+        'total': len(events),
+        'summary': summary,
+    })
+
+
+@app.route('/api/games/<game_id>/status')
+def get_game_status(game_id):
+    """查询游戏运行状态"""
+    observer = LIVE_OBSERVERS.get(game_id)
+    if observer:
+        with observer._lock:
+            status = 'finished' if observer._finished else 'running'
+            return jsonify({
+                'game_id': game_id,
+                'status': status,
+                'events_count': len(observer._history),
+            })
+
+    events = load_events(game_id)
+    summary = load_summary(game_id)
+    if events and summary:
+        return jsonify({
+            'game_id': game_id,
+            'status': 'finished',
+            'events_count': len(events),
+            'winner': summary.get('winner'),
+            'rounds': summary.get('rounds'),
+        })
+
+    return jsonify({'game_id': game_id, 'status': 'unknown'}), 404
+
 
 if __name__ == '__main__':
     socketio.run(app, debug=True, port=5000, host='0.0.0.0')

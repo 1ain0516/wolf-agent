@@ -98,12 +98,13 @@ class StubLLM:
         ],
     }
 
-    def __init__(self):
+    def __init__(self, delay: float = 0.3):
         self.api_key = "stub"
         self.base_url = "http://stub"
         self.model = "stub"
         self._call_count = 0
         self._personalities = {}    # player_id -> personality_code
+        self.delay = delay  # 每次调用延迟（秒），让实时观战可见
 
     def set_personalities(self, mapping: dict):
         """设置玩家 -> 人格映射"""
@@ -165,7 +166,12 @@ class StubLLM:
         "DEAD": "……",
     }
 
+    def _delay(self):
+        if self.delay > 0:
+            time.sleep(self.delay)
+
     def speak(self, messages):
+        self._delay()
         self._call_count += 1
         self._ensure_personalities_from_context(messages)
         pid = self._player_from_context(messages)
@@ -184,6 +190,7 @@ class StubLLM:
         return phrase, f"{pers}风格第{self._call_count}次发言"
 
     def vote(self, messages):
+        self._delay()
         alive = self._alive_from_context(messages)
         if not alive:
             return 1
@@ -203,6 +210,7 @@ class StubLLM:
         return others[idx]
 
     def act(self, messages):
+        self._delay()
         alive = self._alive_from_context(messages)
         if not alive:
             return {"target": 1, "use_antidote": False, "poison_target": None}
@@ -215,6 +223,7 @@ class StubLLM:
         return {"target": others[idx], "use_antidote": False, "poison_target": None}
 
     def reflect(self, messages):
+        self._delay()
         pid = self._player_from_context(messages)
         pers = self._get_personality(pid)
         reflections = {
@@ -247,13 +256,16 @@ class StubLLM:
         return "test", "test"
 
     def witch_act(self, context, save_target, has_antidote, has_poison):
+        self._delay()
         return {"use_antidote": False, "poison_target": None}
 
     def wolf_discuss(self, context, packmates):
+        self._delay()
         return "今晚的目标已经很明确了，动手吧。"
 
     def night_kill(self, context, targets):
         """选择击杀目标。targets 已是 non_wolves 列表"""
+        self._delay()
         if not targets:
             return 1
         # 优先杀编号最小的，但保持变化
@@ -262,6 +274,7 @@ class StubLLM:
         return targets[idx]
 
     def night_investigate(self, context, targets):
+        self._delay()
         return targets[0]
 
 

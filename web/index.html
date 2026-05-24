@@ -3,30 +3,34 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Wolf Agent v2.2 — 游戏验证</title>
+<title>Wolf Agent v2.3 — 实时观战 + 时间轴回放</title>
 <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0a0e27; color:#e8e6e1; overflow:hidden; }
 #app { width:100vw; height:100vh; display:flex; flex-direction:column; }
-.header { background:linear-gradient(135deg,#1a1f3a 0%,#2d1b4e 100%); padding:12px 24px; border-bottom:1px solid #3c3c5c; display:flex; justify-content:space-between; align-items:center; }
+.header { background:linear-gradient(135deg,#1a1f3a 0%,#2d1b4e 100%); padding:10px 24px; border-bottom:1px solid #3c3c5c; display:flex; justify-content:space-between; align-items:center; }
 .header h1 { font-size:18px; font-weight:600; }
-.header-right { display:flex; gap:12px; align-items:center; }
+.header-right { display:flex; gap:10px; align-items:center; }
+.conn-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:4px; }
+.conn-dot.green { background:#10b981; box-shadow:0 0 6px #10b981; }
+.conn-dot.yellow { background:#f59e0b; animation:pulse 1s infinite; }
+.conn-dot.red { background:#ef4444; }
 .mode-badge { padding:4px 10px; border-radius:10px; font-size:11px; font-weight:600; }
 .mode-stub { background:#10b981; color:#fff; }
 .mode-real { background:#ef4444; color:#fff; }
-.btn { padding:8px 16px; border:1px solid #3c3c5c; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; transition:all 0.2s; }
+.btn { padding:8px 14px; border:1px solid #3c3c5c; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; transition:all 0.2s; background:#1a1f3a; color:#e8e6e1; }
+.btn:hover { background:#252d4a; }
 .btn-primary { background:#8b5cf6; border-color:#8b5cf6; color:#fff; }
 .btn-primary:hover { background:#7c3aed; }
 .btn-green { background:#10b981; border-color:#059669; color:#fff; }
 .btn-green:hover { background:#059669; }
-.btn-secondary { background:#1a1f3a; color:#e8e6e1; }
-.btn-secondary:hover { background:#252d4a; }
 .btn:disabled { opacity:0.5; cursor:not-allowed; }
 .main-layout { flex:1; display:flex; overflow:hidden; }
 .left-rail { width:260px; background:#0f1419; border-right:1px solid #3c3c5c; display:flex; flex-direction:column; overflow-y:auto; padding:12px; gap:12px; }
 .center-stage { flex:1; display:flex; flex-direction:column; background:#0a0e27; position:relative; }
 .right-panel { width:340px; background:#0f1419; border-left:1px solid #3c3c5c; display:flex; flex-direction:column; overflow:hidden; }
+.panel-content { flex:1; min-height:0; overflow-y:auto; padding:12px; }
 canvas { flex:1; display:block; }
 .settings-section { background:#1a1f3a; border:1px solid #3c3c5c; border-radius:8px; padding:12px; }
 .settings-label { font-size:12px; font-weight:600; color:#d7b969; margin-bottom:8px; display:block; }
@@ -49,14 +53,27 @@ canvas { flex:1; display:block; }
 .game-card.selected { background:#2d1b4e; border-color:#8b5cf6; }
 .game-card-title { font-weight:600; color:#d7b969; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .game-card-meta { color:#aaa89d; margin-top:4px; }
-.scene-tabs { display:flex; border-bottom:1px solid #3c3c5c; }
-.scene-tab { flex:1; padding:10px; text-align:center; cursor:pointer; font-size:13px; font-weight:600; border-bottom:2px solid transparent; transition:all 0.2s; }
-.scene-tab:hover { background:#1a1f3a; }
-.scene-tab.active { border-bottom-color:#8b5cf6; color:#8b5cf6; }
-.round-selector { padding:8px 12px; border-bottom:1px solid #3c3c5c; display:flex; gap:8px; align-items:center; overflow-x:auto; }
-.round-btn { padding:4px 10px; border:1px solid #3c3c5c; border-radius:4px; background:#1a1f3a; color:#e8e6e1; cursor:pointer; font-size:12px; white-space:nowrap; }
-.round-btn.selected { background:#8b5cf6; border-color:#8b5cf6; }
-.panel-content { flex:1; overflow-y:auto; padding:12px; }
+
+/* v2.3: Timeline */
+.timeline-bar-wrap { padding:8px 16px; background:#0f1419; border-top:1px solid #3c3c5c; }
+.timeline-phase-markers { display:flex; justify-content:space-between; padding:0 8px 4px; font-size:9px; color:#aaa89d; position:relative; }
+.timeline-bar { position:relative; height:6px; background:#2a2f4a; border-radius:3px; cursor:pointer; }
+.timeline-fill { position:absolute; left:0; top:0; bottom:0; background:#d7b969; border-radius:3px; }
+.timeline-thumb { position:absolute; top:-5px; width:16px; height:16px; background:#d7b969; border-radius:50%; transform:translateX(-50%); cursor:grab; z-index:2; }
+.timeline-event-dots { position:absolute; top:0; left:0; right:0; bottom:0; }
+.timeline-event-dot { position:absolute; top:1px; width:4px; height:4px; border-radius:50%; transform:translateX(-50%); opacity:0.6; }
+.timeline-event-dot.phase { background:#8b5cf6; width:6px; height:6px; top:0; }
+.timeline-event-dot.eliminated { background:#ef4444; }
+.timeline-controls { display:flex; align-items:center; gap:8px; padding:6px 0; }
+.timeline-controls button { background:none; border:1px solid #3c3c5c; border-radius:4px; color:#e8e6e1; cursor:pointer; font-size:14px; padding:4px 8px; }
+.timeline-controls button:hover { background:#1a1f3a; }
+.timeline-controls button.active { background:#8b5cf6; border-color:#8b5cf6; }
+.speed-btns { display:flex; gap:2px; }
+.speed-btn { padding:2px 8px; border:1px solid #3c3c5c; border-radius:3px; background:#0f1419; color:#e8e6e1; cursor:pointer; font-size:11px; }
+.speed-btn.active { background:#d7b969; color:#0a0e27; border-color:#d7b969; }
+.timeline-info { font-size:11px; color:#aaa89d; white-space:nowrap; }
+
+/* Right panel: messages */
 .msg-item { margin-bottom:10px; padding:10px; background:#1a1f3a; border-radius:6px; font-size:12px; }
 .msg-header { display:flex; gap:8px; margin-bottom:4px; flex-wrap:wrap; }
 .msg-badge { padding:2px 6px; border-radius:4px; font-size:10px; font-weight:600; }
@@ -66,20 +83,19 @@ canvas { flex:1; display:block; }
 .badge-witch { background:#b392d6; color:#0a0e27; }
 .msg-speaker { font-weight:600; color:#d7b969; }
 .msg-content { color:#e8e6e1; line-height:1.5; margin-top:4px; }
-.msg-summary { font-size:11px; color:#aaa89d; margin-top:4px; }
-.vote-table { margin-top:12px; }
-.vote-table table { width:100%; border-collapse:collapse; font-size:11px; }
-.vote-table td { padding:4px 8px; border:1px solid #3c3c5c; }
-.vote-result { margin-top:8px; padding:8px; background:#1a1f3a; border-radius:4px; font-size:12px; }
-.death-item { padding:6px 8px; background:#7f1d1d; border-radius:4px; margin:4px 0; font-size:12px; }
 .system-event { padding:6px 8px; color:#d7b969; font-size:12px; border-left:2px solid #d7b969; margin:6px 0; }
+.phase-label { font-size:10px; color:#d7b969; margin-bottom:4px; font-weight:600; }
 .player-detail { padding:10px; background:#1a1f3a; border-radius:6px; margin-bottom:8px; font-size:12px; }
 .player-detail .name { font-weight:600; color:#d7b969; }
 .player-detail .role { color:#82a9d9; }
-.player-detail .personality { color:#b392d6; }
 .memory-section { padding:10px; background:#1a1f3a; border-radius:6px; margin-top:8px; }
 .memory-section .title { font-weight:600; color:#d7b969; margin-bottom:6px; font-size:12px; }
 .memory-section .content { font-size:12px; line-height:1.5; color:#e8e6e1; }
+.scene-tabs { display:flex; border-bottom:1px solid #3c3c5c; }
+.scene-tab { flex:1; padding:8px 6px; text-align:center; cursor:pointer; font-size:12px; font-weight:600; border-bottom:2px solid transparent; transition:all 0.2s; }
+.scene-tab:hover { background:#1a1f3a; }
+.scene-tab.active { border-bottom-color:#8b5cf6; color:#8b5cf6; }
+
 .empty-state { display:flex; align-items:center; justify-content:center; height:100%; color:#aaa89d; font-size:14px; }
 .running-state { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; background:#0a0e27; }
 .running-icon { font-size:64px; animation:pulse 1.5s infinite; }
@@ -89,6 +105,8 @@ canvas { flex:1; display:block; }
 .winner-banner { padding:16px; text-align:center; border-radius:8px; margin-bottom:12px; font-size:16px; font-weight:700; }
 .winner-wolf { background:linear-gradient(135deg,#7f1d1d,#991b1b); color:#fca5a5; }
 .winner-villager { background:linear-gradient(135deg,#064e3b,#065f46); color:#6ee7b7; }
+
+.hotkey-hint { font-size:10px; color:#5a5a7a; }
 ::-webkit-scrollbar { width:6px; }
 ::-webkit-scrollbar-track { background:#0f1419; }
 ::-webkit-scrollbar-thumb { background:#3c3c5c; border-radius:3px; }
@@ -98,30 +116,37 @@ canvas { flex:1; display:block; }
 <body>
 <div id="app">
   <div class="header">
-    <h1>🐺 Wolf Agent v2.2</h1>
+    <h1>🐺 Wolf Agent v2.3</h1>
     <div class="header-right">
+      <span v-if="liveMode || timelineEvents.length > 0" style="font-size:12px;">
+        <span class="conn-dot" :class="connectionStatus==='connected'?'green':connectionStatus==='connecting'?'yellow':'red'"></span>
+        <span v-if="gameError" style="color:#fca5a5;">❌ {{ gameError }}</span>
+        <span v-else-if="connectionStatus==='ended'">游戏结束 · {{ timelineEvents.length }} 事件</span>
+        <span v-else>{{ connectionStatus === 'connected' ? '已连接' : connectionStatus === 'connecting' ? '重连中...' : '已断开' }}</span>
+      </span>
+      <span v-if="liveMode && liveState.last_action" style="font-size:12px;color:#d7b969;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+        正在：{{ liveState.last_action }}
+      </span>
       <span class="mode-badge" :class="runMode === 'real' ? 'mode-real' : 'mode-stub'">{{ runMode === 'real' ? 'Real' : 'Stub' }}</span>
-      <button class="btn btn-green" @click="showSettings = true" :disabled="isRunning">▶️ 开始游戏</button>
+      <button class="btn btn-green" @click="showSettings = true" :disabled="isRunning || liveMode">▶️ 开始游戏</button>
+      <button class="btn btn-primary" @click="startLiveGame" :disabled="isRunning || liveMode">🔴 实时观战</button>
     </div>
   </div>
 
   <div class="main-layout">
     <!-- 左侧栏 -->
     <div class="left-rail">
-      <!-- 运行控制 -->
-      <div v-if="isRunning" class="settings-section">
-        <span class="settings-label">{{ runStatus === 'queued' ? '⏳ 排队中' : runStatus === 'running' ? '🔄 运行中' : runStatus === 'completed' ? '✅ 完成' : '⚠️ ' + runStatus }}</span>
-        <div class="progress-bar"><div class="progress-fill" :style="{width:runPct+'%'}"></div></div>
-        <div class="progress-text">{{ runCompleted }}/{{ runTotal }} · {{ runStatus === 'running' && runMode === 'real' ? 'AI正在发言，请耐心等待...' : runStatus }}</div>
-        <div v-if="runErrors.length > 0" style="margin-top:8px;font-size:10px;color:#fca5a5;">
-          {{ runErrors.length }} 局失败: {{ runErrors.slice(-1)[0].error }}
+      <div v-if="isRunning || liveMode" class="settings-section">
+        <span class="settings-label">{{ liveMode ? '🔴 实时观战中' : runStatus === 'running' ? '🔄 运行中' : runStatus === 'completed' ? '✅ 完成' : '⚠️ ' + runStatus }}</span>
+        <div class="progress-bar" v-if="!liveMode"><div class="progress-fill" :style="{width:runPct+'%'}"></div></div>
+        <div class="progress-text" v-if="!liveMode">{{ runCompleted }}/{{ runTotal }} · {{ runStatus === 'running' && runMode === 'real' ? 'AI正在发言...' : runStatus }}</div>
+        <div class="progress-text" v-if="liveMode && liveState">
+          <div v-if="liveState.last_action">{{ liveState.last_action }} · {{ timelineEvents.length }} events</div>
+          {{ liveState.phase || '启动中' }} · {{ timelineEvents.length }} 事件
         </div>
-        <div v-if="runStatus === 'failed' && runErrors.length > 0" style="margin-top:4px;font-size:10px;color:#fca5a5;">
-          {{ runErrors[0].error?.substring(0, 100) }}
-        </div>
+        <button v-if="liveMode" class="btn" style="width:100%;margin-top:8px;" @click="stopLiveWatch">停止观战</button>
       </div>
 
-      <!-- 结果列表 -->
       <div class="settings-section" v-if="allResults.length > 0 || isRunning">
         <span class="settings-label">对局结果</span>
         <div class="game-list">
@@ -129,14 +154,11 @@ canvas { flex:1; display:block; }
                :class="{ selected: selectedGameId === r.game_id }"
                @click="openReplay(r.game_id)">
             <div class="game-card-title">{{ r.game_id }}</div>
-            <div class="game-card-meta">
-              {{ r.winner === 'werewolf' ? '🐺' : '👤' }} {{ r.rounds }}轮 · {{ r.event_count }}事件
-            </div>
+            <div class="game-card-meta">{{ r.winner === 'werewolf' ? '🐺' : '👤' }} {{ r.rounds }}轮 · {{ r.event_count }}事件</div>
           </div>
         </div>
       </div>
 
-      <!-- 已保存对局 -->
       <div class="settings-section">
         <span class="settings-label">已保存对局</span>
         <div class="game-list">
@@ -144,105 +166,85 @@ canvas { flex:1; display:block; }
                :class="{ selected: selectedGameId === g.game_id }"
                @click="openReplay(g.game_id)">
             <div class="game-card-title" style="font-size:11px;">{{ g.game_id }}</div>
-            <div class="game-card-meta">
-              {{ g.winner === 'werewolf' ? '🐺' : '👤' }} {{ g.rounds }}轮
-            </div>
+            <div class="game-card-meta">{{ g.winner === 'werewolf' ? '🐺' : '👤' }} {{ g.rounds }}轮</div>
           </div>
         </div>
         <div v-if="savedGames.length === 0" style="font-size:11px;color:#aaa89d;text-align:center;padding:12px;">暂无对局</div>
+      </div>
+
+      <div class="hotkey-hint">
+        快捷键: Space 播放/暂停 | ← → 步进 | 1-4 变速 | Home/End 跳转
       </div>
     </div>
 
     <!-- 中间舞台 -->
     <div class="center-stage">
-      <div v-if="isRunning" class="running-state">
+      <div v-if="isRunning && !liveMode" class="running-state">
         <div class="running-icon">🎮</div>
         <div class="running-title">AI 正在进行对局，完成后自动进入回放</div>
-        <div class="running-sub">{{ runMode === 'real' ? 'Real 模式约需 5-8 分钟，请耐心等待' : 'Stub 模式约需 3-10 秒' }}</div>
+        <div class="running-sub">{{ runMode === 'real' ? 'Real 模式约需 5-8 分钟' : 'Stub 模式约需 3-10 秒' }}</div>
         <div style="width:300px;margin-top:12px;">
           <div class="progress-bar"><div class="progress-fill" :style="{width:runPct+'%'}"></div></div>
           <div class="progress-text" style="color:#d7b969;text-align:center;margin-top:6px;">{{ runCompleted }}/{{ runTotal }} 局完成</div>
         </div>
       </div>
-      <canvas v-else-if="replayData" ref="gameCanvas" :width="canvasW" :height="canvasH"></canvas>
-      <div v-else class="empty-state">点击"开始游戏"运行对局，或从左侧选择已保存的对局</div>
+      <canvas v-if="(liveMode || replayData) && !(isRunning && !liveMode)" ref="gameCanvas" :width="canvasW" :height="canvasH" @click="onCanvasClick($event)"></canvas>
+      <div v-if="!isRunning && !liveMode && !replayData" class="empty-state">点击"开始游戏"运行对局，或"实时观战"观看单局</div>
     </div>
 
     <!-- 右侧面板 -->
-    <div class="right-panel" v-if="replayData">
-      <div class="scene-tabs">
-        <div class="scene-tab" :class="{active:scene==='day'}" @click="scene='day'">☀️ 白天</div>
-        <div class="scene-tab" :class="{active:scene==='night'}" @click="scene='night'">🌙 夜晚</div>
-        <div class="scene-tab" :class="{active:scene==='end'}" @click="scene='end'">🏁 结算</div>
+    <div class="right-panel" v-if="replayData || (liveMode && liveState)">
+      <!-- 消息类型筛选 tabs -->
+      <div class="scene-tabs" v-if="!liveMode">
+        <div class="scene-tab" :class="{active:msgFilter==='all'}" @click="msgFilter='all'">全部</div>
+        <div class="scene-tab" :class="{active:msgFilter==='day'}" @click="msgFilter='day'">☀️ 白天</div>
+        <div class="scene-tab" :class="{active:msgFilter==='night'}" @click="msgFilter='night'">🌙 夜晚</div>
+        <div class="scene-tab" :class="{active:msgFilter==='system'}" @click="msgFilter='system'">📢 系统</div>
       </div>
-
-      <div class="round-selector" v-if="scene !== 'end'">
-        <div v-for="r in replayData.rounds" :key="r.round" class="round-btn"
-             :class="{selected:currentRound===r.round}"
-             @click="currentRound=r.round">R{{ r.round }}</div>
+      <div v-else style="padding:8px 12px;border-bottom:1px solid #3c3c5c;font-size:12px;font-weight:600;">
+        🔴 实时消息流
       </div>
-
-      <div class="panel-content">
-        <!-- 白天 -->
-        <div v-if="scene==='day' && roundData">
-          <div v-if="roundData.day.announcements?.length" class="system-event" v-for="a in roundData.day.announcements">{{ a }}</div>
-          <div v-if="roundData.day.messages" v-for="m in roundData.day.messages" class="msg-item">
-            <div class="msg-header">
-              <span class="msg-speaker">{{ m.player_id }}号</span>
-              <span class="msg-badge" :class="'badge-'+getRoleClass(m.role)">{{ roleNames[m.role] }}</span>
-              <span class="msg-badge" style="background:#b392d6;color:#fff;">{{ getPlayerPers(m.player_id) }}</span>
-            </div>
-            <div class="msg-content">{{ m.content }}</div>
-            <div class="msg-summary" v-if="m.strategy_summary">{{ m.strategy_summary }}</div>
+      <div v-if="liveMode && liveState.last_action" style="padding:8px 12px;border-bottom:1px solid #3c3c5c;font-size:12px;color:#d7b969;background:#171c31;">
+        {{ liveState.last_action }}
+      </div>
+      <div class="panel-content" ref="msgPanel">
+        <div v-for="(m, idx) in visibleMessages" :key="m.event_id || m.timestamp || idx" class="msg-item" :class="{'system-event': m._is_system}">
+          <div class="msg-header" v-if="!m._is_system">
+            <span class="msg-speaker">{{ m.player_id }}号</span>
+            <span class="msg-badge" :class="'badge-'+getRoleClass(m.role)">{{ roleNames[m.role] || '?' }}</span>
+            <span class="msg-badge" v-if="m.personality" style="background:#b392d6;color:#fff;">{{ m.personality_name }}</span>
           </div>
-          <div v-if="roundData.day.votes?.length" class="vote-table">
-            <div style="font-weight:600;margin-bottom:4px;font-size:12px;color:#d7b969;">📊 投票</div>
-            <table><tr v-for="v in roundData.day.votes"><td>{{ v.voter }}号 → {{ v.target }}号</td></tr></table>
-          </div>
-          <div class="death-item" v-for="d in roundData.day.deaths" v-if="roundData.day.deaths?.length">🗳️ {{ d }}号被投票出局</div>
-          <div v-if="roundData.day.vote_result" class="vote-result">
-            <div v-if="roundData.day.vote_result.eliminated"><strong>出局:</strong> {{ roundData.day.vote_result.eliminated }}号</div>
-            <div v-if="roundData.day.vote_result.tie">⚖️ 平票</div>
-            <div v-if="roundData.day.vote_result.counts" style="margin-top:4px;color:#aaa89d;">
-              <div v-for="(c,p) in roundData.day.vote_result.counts">{{ p }}号: {{ c }} 票</div>
-            </div>
-          </div>
-          <div v-if="!roundData.day.messages?.length && !roundData.day.votes?.length" style="color:#aaa89d;font-size:12px;text-align:center;">本回合无公开发言</div>
+          <div v-if="m._phase_label" class="phase-label">{{ m._phase_label }}</div>
+          <div class="msg-content">{{ m.content }}</div>
         </div>
-
-        <!-- 夜晚 -->
-        <div v-if="scene==='night' && roundData">
-          <div class="system-event" v-if="roundData.night.kill_target">🔪 刀人目标: {{ roundData.night.kill_target }}号</div>
-          <div class="death-item" v-for="d in roundData.night.deaths" v-if="roundData.night.deaths?.length">💀 {{ d }}号死亡</div>
-          <div v-if="roundData.night.messages" v-for="m in roundData.night.messages" class="msg-item">
-            <div class="msg-header">
-              <span class="msg-speaker">{{ m.player_id }}号</span>
-              <span class="msg-badge badge-wolf">🐺 狼人</span>
-              <span class="msg-badge" style="background:#b392d6;color:#fff;">{{ getPlayerPers(m.player_id) }}</span>
-            </div>
-            <div class="msg-content">{{ m.content }}</div>
-            <div class="msg-summary" v-if="m.strategy_summary">{{ m.strategy_summary }}</div>
-          </div>
-          <div v-if="!roundData.night.kill_target && !roundData.night.messages?.length" style="color:#aaa89d;font-size:12px;text-align:center;">本回合无狼人行动</div>
-        </div>
-
-        <!-- 结算 -->
-        <div v-if="scene==='end'">
-          <div class="winner-banner" :class="replayData.winner==='werewolf'?'winner-wolf':'winner-villager'">
-            {{ replayData.winner === 'werewolf' ? '🐺 狼人胜利' : '👤 好人阵营胜利' }}
-          </div>
-          <div v-for="p in replayData.players" class="player-detail">
-            <div class="name">{{ p.id }}号 [{{ p.personality }}] <span :style="{color:p.alive?'#7bc77e':'#d96f65'}">{{ p.alive?'存活':'死亡'}}</span></div>
-            <div class="role">{{ roleNames[p.role] }}</div>
-            <div class="personality">{{ personalityNames[p.personality] || p.personality }}</div>
-            <div class="memory-section" v-if="p.memory">
-              <div class="title">📝 赛后反思</div>
-              <div class="content">{{ p.memory.content || p.memory.text || JSON.stringify(p.memory) }}</div>
-            </div>
-            <div v-else style="font-size:11px;color:#aaa89d;margin-top:4px;">本局未写入记忆（stub 或 no-memory 模式）</div>
-          </div>
+        <div v-if="visibleMessages.length === 0" style="color:#aaa89d;font-size:12px;text-align:center;padding:24px;">
+          {{ liveMode ? '等待事件...' : '暂无消息' }}
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- 时间轴控制条（底部固定） -->
+  <div class="timeline-bar-wrap" v-if="timelineEvents.length > 0 && !liveMode">
+    <div class="timeline-phase-markers">
+      <span v-for="m in phaseMarkers" :key="m.index" :style="{position:'absolute',left:(m.position*100)+'%',transform:'translateX(-50%)'}">{{ m.label }}</span>
+    </div>
+    <div class="timeline-bar" @click="onProgressBarClick" @mousedown="onDragStart" ref="progressBar">
+      <div class="timeline-fill" :style="{width:progressPct + '%'}"></div>
+      <div class="timeline-event-dots">
+        <span v-for="(dot, i) in eventDots" :key="i" class="timeline-event-dot" :class="dot.cls"
+              :style="{left:(dot.pos*100)+'%'}"></span>
+      </div>
+      <div class="timeline-thumb" :style="{left:progressPct + '%'}"></div>
+    </div>
+    <div class="timeline-controls">
+      <button @click="timelineStep(-1)" title="后退">◀◀</button>
+      <button @click="togglePlay" :title="timelinePlaying?'暂停':'播放'">{{ timelinePlaying ? '⏸' : '▶' }}</button>
+      <button @click="timelineStep(1)" title="前进">▶▶</button>
+      <div class="speed-btns">
+        <button v-for="s in [0.5,1,2,4]" :key="s" class="speed-btn" :class="{active:timelineSpeed===s}" @click="setSpeed(s)">{{ s }}x</button>
+      </div>
+      <span class="timeline-info">evt {{ timelineCursor }}/{{ timelineEvents.length }} · {{ formatTime(timelineCursor) }}</span>
     </div>
   </div>
 
@@ -250,12 +252,10 @@ canvas { flex:1; display:block; }
   <div v-if="showSettings" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;" @click.self="showSettings=false">
     <div style="background:#1a1f3a;border:1px solid #3c3c5c;border-radius:12px;padding:24px;max-width:420px;width:90%;">
       <div style="font-size:18px;font-weight:600;margin-bottom:20px;">🎮 开始游戏</div>
-
       <div class="setting-row">
         <label>局数</label>
         <input type="number" v-model.number="settings.batchSize" :min="1" :max="settings.mode==='real'?5:50">
       </div>
-
       <div class="setting-row">
         <label>模式</label>
         <div class="segmented">
@@ -263,7 +263,6 @@ canvas { flex:1; display:block; }
           <button :class="{selected:settings.mode==='real'}" @click="settings.mode='real';settings.batchSize=Math.min(settings.batchSize,5)">Real</button>
         </div>
       </div>
-
       <div class="setting-row">
         <label>Seed</label>
         <div class="segmented">
@@ -275,22 +274,32 @@ canvas { flex:1; display:block; }
         <label>Base Seed</label>
         <input type="number" v-model.number="settings.baseSeed">
       </div>
-
       <div class="checkbox-row">
         <input type="checkbox" v-model="settings.memoryEnabled" id="memcheck">
         <label for="memcheck">启用记忆力</label>
       </div>
-
+      <div class="setting-row" v-if="settings.mode==='real'">
+        <label>API Key</label>
+        <input type="password" v-model="settings.apiKey" placeholder="sk-..." style="width:100%;padding:8px;background:#0f1419;border:1px solid #3c3c5c;border-radius:4px;color:#e8e6e1;font-size:13px;">
+      </div>
+      <div class="setting-row" v-if="settings.mode==='real'">
+        <label>Base URL（可选）</label>
+        <input type="text" v-model="settings.baseUrl" placeholder="https://api.deepseek.com/v1" style="width:100%;padding:8px;background:#0f1419;border:1px solid #3c3c5c;border-radius:4px;color:#e8e6e1;font-size:13px;">
+      </div>
+      <div class="setting-row" v-if="settings.mode==='real'">
+        <label>模型（可选）</label>
+        <input type="text" v-model="settings.model" placeholder="deepseek-chat" style="width:100%;padding:8px;background:#0f1419;border:1px solid #3c3c5c;border-radius:4px;color:#e8e6e1;font-size:13px;">
+      </div>
       <div v-if="settings.mode==='real'" class="cost-warning">⚠️ 真实模式会调用模型并产生费用</div>
       <div class="checkbox-row" v-if="settings.mode==='real'" style="margin-top:8px;">
         <input type="checkbox" v-model="settings.costConfirmed" id="costcheck">
         <label for="costcheck" style="color:#fca5a5;">我知道这会产生 API 成本</label>
       </div>
-
       <div style="display:flex;gap:12px;margin-top:20px;">
         <button class="btn btn-primary" style="flex:1" @click="startRun"
-                :disabled="settings.mode==='real' && !settings.costConfirmed">开始运行</button>
-        <button class="btn btn-secondary" style="flex:1" @click="showSettings=false">取消</button>
+                :disabled="settings.mode==='real' && !settings.costConfirmed">开始批量运行</button>
+        <button class="btn btn-green" style="flex:1" @click="startLiveFromSettings">实时观战 (1局)</button>
+        <button class="btn" style="flex:0" @click="showSettings=false">取消</button>
       </div>
     </div>
   </div>
@@ -298,22 +307,204 @@ canvas { flex:1; display:block; }
 
 <script>
 const { createApp } = Vue;
+
+// ============ Pixel Sprite System ============
+
+const HAIR_COLORS = [
+    '#d96f65','#f5a623','#f7dc6f','#7bc77e','#82a9d9',
+    '#b392d6','#e8d5b7','#5a3825','#1a1a2e',
+];
+
+const ROLE_SPRITES = {
+    werewolf: {
+        pixels: [
+            '...H.....H...','..HHH...HHH..','...HHHHHHH...','...SSSSSSS...',
+            '...SESESSS...','...SSSMSSS...','....SSSSS....','...BBBBBBB...',
+            '..BBBBBBBBB..','...BBBBBBB...','...BBBBBBB...','....LL.LL....',
+            '....LL.LL....',
+        ],
+        eye_color: '#ff3333', body_color: '#4a5568', accessory_color: null,
+    },
+    seer: {
+        pixels: [
+            '.....AAA.....','...AAAAAAA...','...HHHHHHH...','...SSSSSSS...',
+            '...SESESSS...','...SSSMSSS...','....SSSSS....','...BBBBBBB...',
+            '..BBBBBBBBB..','...BBBBBBB...','...BBBBBBB...','....LL.LL....',
+            '....LL.LL....',
+        ],
+        eye_color: '#1a1a2e', body_color: '#3b5998', accessory_color: '#f7dc6f',
+    },
+    witch: {
+        pixels: [
+            '......H......','.....HHH.....','....HHHHH....','...HHHHHHH...',
+            '...SSSSSSS...','...SESESSS...','...SSSMSSS...','....SSSSS....',
+            '..BBBBBBBBB..','...BBBBBBB...','...BBBBBBB...','....LL.LL....',
+            '....LL.LL....',
+        ],
+        eye_color: '#1a1a2e', body_color: '#7c3aed', accessory_color: '#22c55e',
+    },
+    villager: {
+        pixels: [
+            '...HHHHHHH...','...HHHHHHH...','...SSSSSSS...','...SESESSS...',
+            '...SSSMSSS...','....SSSSS....','...BBBBBBB...','..BBBBBBBBB..',
+            '...BBBBBBB...','...BBBBBBB...','....LL.LL....','....LL.LL....',
+            '................',
+        ],
+        eye_color: '#1a1a2e', body_color: '#92400e', accessory_color: null,
+    },
+};
+
+const ROLE_PALETTES = {
+    werewolf: { body:'#4a5568', acc:null },
+    seer: { body:'#3b5998', acc:'#f7dc6f' },
+    witch: { body:'#7c3aed', acc:'#22c55e' },
+    villager: { body:'#92400e', acc:null },
+};
+
+// ============ reduceEvent — Pure function reducer ============
+
+const PERSONALITY_NAMES = {
+    BOSS:'掌控者', FAKE:'伪人', 'THIN-K':'思考者', FUCK:'莽夫',
+    OJBK:'无所谓人', SHIT:'愤世者', ZZZZ:'装死者', MALO:'吵闹',
+    'JOKE-R':'小丑', 'LOVE-R':'多情者', MUM:'妈妈', IMSB:'傻子',
+    SOLO:'孤儿', SEXY:'尤物', MONK:'僧人', DEAD:'死者',
+};
+
+function formatProgress(evt) {
+    const pid = evt.from_player ? `${evt.from_player}号` : '';
+    const action = evt.metadata?.action || '';
+    const target = evt.metadata?.target;
+    const labels = {
+        wolf_discuss: '正在狼队讨论',
+        night_kill: '正在选择夜间目标',
+        wolf_kill_decision: `狼人决定杀死 ${target || '?'} 号`,
+        seer_investigate: '正在查验身份',
+        witch_act: '正在决定女巫行动',
+        last_will: '正在整理遗言',
+        day_speech: '正在发言',
+        debate_speech: '正在辩论',
+        vote: '正在投票',
+        post_game_reflect: '正在写赛后复盘',
+    };
+    const label = labels[action] || '正在行动';
+    return pid ? `${pid}${label}` : label;
+}
+
+function reduceEvent(state, evt) {
+    const next = { ...state };
+    switch (evt.type) {
+        case 'game_started':
+            next.players = (evt.metadata && evt.metadata.player_count)
+                ? Array.from({length: evt.metadata.player_count}, (_,i) => ({
+                    id: i+1, role: null, alive: true, hair_color: HAIR_COLORS[i]
+                  }))
+                : state.players;
+            next.phase = 'started';
+            next.messages = [];
+            next.last_action = 'Game started';
+            break;
+        case 'role_assigned':
+            next.players = next.players.map(p =>
+                p.id === evt.from_player
+                    ? { ...p, role: evt.metadata.role, personality: evt.metadata.personality || p.personality }
+                    : p
+            );
+            break;
+        case 'phase_started':
+            next.phase = evt.metadata.phase;
+            next.round = evt.metadata.round || next.round;
+            next.current_speaker = null;
+            next.last_action = `Round ${next.round} ${next.phase}`;
+            break;
+        case 'progress':
+            next.current_speaker = evt.from_player || null;
+            next.last_action = formatProgress(evt);
+            break;
+        case 'message_posted':
+            const player = next.players.find(p=>p.id===evt.from_player) || {};
+            next.current_speaker = evt.from_player;
+            next.last_action = evt.from_player ? `${evt.from_player}号发言` : '系统消息';
+            next.messages = [...(next.messages||[]), {
+                event_id: evt.event_id,
+                player_id: evt.from_player,
+                content: evt.content,
+                role: player.role,
+                personality: player.personality,
+                personality_name: PERSONALITY_NAMES[player.personality] || player.personality,
+                timestamp: evt.timestamp,
+                _is_system: !evt.from_player || evt.channel === 'announcement' || evt.channel === 'last_will' || evt.channel === 'seer_vision',
+            }];
+            break;
+        case 'vote_cast':
+            next.votes = { ...(next.votes||{}), [evt.from_player]: evt.metadata.target };
+            next.last_action = `${evt.from_player}号已投票`;
+            break;
+        case 'vote_resolved':
+            next.votes = {};
+            break;
+        case 'player_eliminated':
+            next.players = next.players.map(p =>
+                p.id === evt.from_player ? { ...p, alive: false } : p
+            );
+            next.current_speaker = null;
+            next.last_action = `${evt.from_player}号出局`;
+            break;
+        case 'game_ended':
+            next.phase = 'ended';
+            next.winner = evt.metadata.winner;
+            next.current_speaker = null;
+            next.last_action = '游戏结束';
+            break;
+    }
+    return next;
+}
+
+function initGameState() {
+    return { players: [], phase: 'waiting', round: 0, current_speaker: null, votes: {}, messages: [], winner: null, last_action: '' };
+}
+
+// ============ Vue App ============
+
 createApp({
   data() {
     return {
       showSettings: false,
-      settings: { batchSize:3, mode:'stub', seedMode:'random', baseSeed:42, memoryEnabled:false, costConfirmed:false },
+      settings: { batchSize:3, mode:'stub', seedMode:'random', baseSeed:42, memoryEnabled:false, costConfirmed:false, apiKey:'', baseUrl:'', model:'' },
       runMode: 'stub',
       isRunning: false, runId: null, runTotal:0, runCompleted:0, runPct:0, runStatus:'', runErrors:[], _pollStopped: false,
       allResults: [],
       savedGames: [],
       selectedGameId: null,
       replayData: null,
-      scene: 'day',
-      currentRound: 1,
+      msgFilter: 'all',
+      scene: 'day', currentRound: 1,
       canvasW: 800, canvasH: 500,
       selectedPlayerId: null,
       pollTimer: null,
+      animFrameId: null,
+
+      // v2.3 live mode
+      liveMode: false,
+      gameError: null,
+      liveGameId: null,
+      liveState: initGameState(),
+      eventSource: null,
+      connectionStatus: 'disconnected',
+      lastEventId: null,
+      reconnectAttempts: 0,
+      livePollTimer: null,
+
+      // v2.3 timeline
+      timelineEvents: [],
+      timelineCursor: 0,
+      timelinePlaying: false,
+      timelineSpeed: 1,
+      timelineTimer: null,
+      replayState: initGameState(),
+      wasPlayingBeforeDrag: false,
+      dragging: false,
+      progressBarRect: null,
+
       roleNames: { werewolf:'🐺 狼人', seer:'🔮 预言家', witch:'女巫', villager:'👨 村民' },
       personalityNames: {
         BOSS:'掌控者',FAKE:'伪人','THIN-K':'思考者',FUCK:'草者',OJBK:'无所谓人',SHIT:'愤世者',ZZZZ:'装死者',
@@ -321,188 +512,675 @@ createApp({
       },
     };
   },
+
   computed: {
-    roundData() {
-      if (!this.replayData) return null;
-      return this.replayData.rounds.find(r => r.round === this.currentRound) || null;
+    progressPct() {
+        const total = this.timelineEvents.length || 1;
+        return (this.timelineCursor / total) * 100;
+    },
+    phaseMarkers() {
+        return this.timelineEvents
+            .map((e,i) => e.type === 'phase_started' ? { index:i, label:(e.metadata.round||'')+(e.metadata.phase||'')[0], position:i/this.timelineEvents.length } : null)
+            .filter(Boolean);
+    },
+    eventDots() {
+        return this.timelineEvents.map((e,i) => ({
+            pos: i / (this.timelineEvents.length||1),
+            cls: e.type === 'phase_started' ? 'phase' : e.type === 'player_eliminated' ? 'eliminated' : '',
+        }));
+    },
+    visibleMessages() {
+        if (this.liveMode) return this.liveState.messages || [];
+        if (this.timelineEvents.length === 0) return [];
+
+        // 扫描所有已播放事件，为每条 message_posted 确定其所属的 phase
+        let currentPhase = null;
+        let currentRound = 0;
+        const phaseNames = { NIGHT: '夜', DAY: '日', VOTE: '投票', WOLF_DEN: '狼窝', NIGHT_PREP: '夜备', EXECUTION: '处决' };
+
+        const messages = [];
+        for (let i = 0; i < this.timelineCursor; i++) {
+            const e = this.timelineEvents[i];
+            if (e.type === 'phase_started') {
+                currentPhase = e.metadata.phase;
+                currentRound = e.metadata.round || currentRound;
+            }
+            if (e.type === 'message_posted') {
+                const phaseCat = ['NIGHT','WOLF_DEN','NIGHT_PREP'].includes(currentPhase) ? 'night'
+                    : ['DAY','DEBATE','VOTE','EXECUTION'].includes(currentPhase) ? 'day'
+                    : 'system';
+                const phaseLabel = `R${currentRound} ${phaseNames[currentPhase] || currentPhase || ''}`;
+                const pers = (this.replayData?.players || []).find(p => p.id === e.from_player)?.personality || '';
+                messages.push({
+                    event_id: e.event_id,
+                    player_id: e.from_player,
+                    content: e.content,
+                    role: this.replayState.players.find(p => p.id === e.from_player)?.role,
+                    personality: pers,
+                    personality_name: this.personalityNames[pers] || pers,
+                    timestamp: e.timestamp,
+                    _phase: phaseCat,
+                    _phase_label: phaseLabel,
+                    _is_system: e.channel === 'announcement' || e.channel === 'last_will',
+                });
+            }
+        }
+
+        if (this.msgFilter === 'all') return messages;
+        return messages.filter(m => m._phase === this.msgFilter || (this.msgFilter === 'system' && m._is_system));
     },
   },
+
   methods: {
+    // ============ v2.2 Batch & Replay ============
+
     getRoleClass(role) {
-      if (role === 'werewolf') return 'wolf';
-      if (role === 'seer') return 'seer';
-      if (role === 'witch') return 'witch';
-      return 'villager';
+        if (role==='werewolf') return 'wolf';
+        if (role==='seer') return 'seer';
+        if (role==='witch') return 'witch';
+        return 'villager';
     },
-    getPlayerPers(playerId) {
-      if (!this.replayData) return '';
-      const p = this.replayData.players.find(x => x.id === playerId);
-      return p ? (this.personalityNames[p.personality] || p.personality || '') : '';
-    },
+
     async loadSavedGames() {
-      try { const r = await fetch('/api/games'); this.savedGames = await r.json(); } catch(e){}
+        try { const r = await fetch('/api/games'); this.savedGames = await r.json(); } catch(e){}
+    },
+
+    saveSettings() {
+        const { apiKey, baseUrl, model, mode } = this.settings;
+        try { localStorage.setItem('wolf-agent-settings', JSON.stringify({ apiKey, baseUrl, model, mode })); } catch(_) {}
     },
 
     async startRun() {
-      this.showSettings = false;
-      this.runMode = this.settings.mode;
-      this.isRunning = true; this.runCompleted = 0; this.runPct = 0; this.runStatus = 'running';
-      this.allResults = []; this.runErrors = []; this._pollStopped = false;
-
-      try {
-        const res = await fetch('/api/runs', {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            batch_size: this.settings.batchSize,
-            mode: this.settings.mode,
-            memory_enabled: this.settings.memoryEnabled,
-            seed_mode: this.settings.seedMode,
-            base_seed: this.settings.seedMode === 'fixed' ? this.settings.baseSeed : null,
-          }),
-        });
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || `HTTP ${res.status}`);
+        // batch_size=1 时走实时观战路径
+        if (this.settings.batchSize === 1) {
+            this.startLiveFromSettings();
+            return;
         }
-        const data = await res.json();
-        this.runId = data.run_id;
-        this.runTotal = data.total;
-        this.pollRun();
-      } catch(e) {
-        alert('启动失败: ' + e.message);
-        this.isRunning = false;
-      }
+        this.showSettings = false;
+        this.runMode = this.settings.mode;
+        this.isRunning = true; this.runCompleted = 0; this.runPct = 0; this.runStatus = 'running';
+        this.allResults = []; this.runErrors = []; this._pollStopped = false;
+
+        try {
+            const res = await fetch('/api/runs', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({
+                    batch_size: this.settings.batchSize, mode: this.settings.mode,
+                    memory_enabled: this.settings.memoryEnabled, seed_mode: this.settings.seedMode,
+                    base_seed: this.settings.seedMode==='fixed' ? this.settings.baseSeed : null,
+                }),
+            });
+            if (!res.ok) { const err = await res.json(); throw new Error(err.error||`HTTP ${res.status}`); }
+            const data = await res.json();
+            this.runId = data.run_id; this.runTotal = data.total;
+            this.pollRun();
+        } catch(e) { alert('启动失败: '+e.message); this.isRunning = false; }
     },
 
     async pollRun() {
-      if (!this.runId || this._pollStopped) return;
-      try {
-        const res = await fetch(`/api/runs/${this.runId}`);
-        const s = await res.json();
-        this.runStatus = s.status;
-        this.runCompleted = s.completed + s.failed;
-        this.runPct = Math.round((this.runCompleted / s.total) * 100);
-        this.allResults = s.results || [];
-        this.runErrors = s.errors || [];
-
-        if (s.status === 'completed' || s.status === 'partial_success' || s.status === 'failed') {
-          this._pollStopped = true;
-          this.isRunning = false;
-          if (this.allResults.length > 0) {
-            await this.loadSavedGames();
-            this.openReplay(this.allResults[0].game_id);
-          }
-        } else {
-          this.pollTimer = setTimeout(() => this.pollRun(), this.runMode === 'real' ? 2000 : 500);
-        }
-      } catch(e) {
-        this.pollTimer = setTimeout(() => this.pollRun(), 1000);
-      }
+        if (!this.runId || this._pollStopped) return;
+        try {
+            const res = await fetch(`/api/runs/${this.runId}`);
+            const s = await res.json();
+            this.runStatus = s.status;
+            this.runCompleted = s.completed + s.failed;
+            this.runPct = Math.round((this.runCompleted / s.total)*100);
+            this.allResults = s.results || []; this.runErrors = s.errors || [];
+            if (s.status==='completed'||s.status==='partial_success'||s.status==='failed') {
+                this._pollStopped = true; this.isRunning = false;
+                if (this.allResults.length > 0) {
+                    await this.loadSavedGames();
+                    this.openReplay(this.allResults[0].game_id);
+                }
+            } else {
+                this.pollTimer = setTimeout(()=>this.pollRun(), this.runMode==='real'?2000:500);
+            }
+        } catch(e) { this.pollTimer = setTimeout(()=>this.pollRun(), 1000); }
     },
 
     async openReplay(gameId) {
-      this.selectedGameId = gameId;
-      try {
-        const res = await fetch(`/api/games/${gameId}/replay`);
-        this.replayData = await res.json();
-        this.scene = 'day';
-        this.currentRound = this.replayData.rounds.length > 0 ? this.replayData.rounds[0].round : 1;
-        this.$nextTick(() => this.drawBoard());
-      } catch(e) { console.error('Replay error:', e); }
+        this.stopLiveWatch();
+        this.selectedGameId = gameId;
+        this.msgFilter = 'all';
+        try {
+            const res = await fetch(`/api/games/${gameId}/replay`);
+            this.replayData = await res.json();
+            // Load full events for timeline
+            const evtRes = await fetch(`/api/games/${gameId}/events`);
+            if (evtRes.ok) {
+                const evtData = await evtRes.json();
+                this.timelineEvents = evtData.events || [];
+                this.timelineCursor = 0;
+                this.replayState = initGameState();
+                this.timelinePlaying = false;
+                this.clearPendingTimer();
+            }
+            this.$nextTick(() => this.drawBoard(0));
+        } catch(e) { console.error('Replay error:', e); }
     },
 
-    drawBoard() {
-      const canvas = this.$refs.gameCanvas;
-      if (!canvas || !this.replayData) return;
-      const ctx = canvas.getContext('2d');
-      const w = canvas.width, h = canvas.height;
-      ctx.fillStyle = this.scene === 'night' ? '#1a1a2e' : '#e8d5b7';
-      ctx.fillRect(0, 0, w, h);
+    // ============ v2.3 Live Watch ============
 
-      const players = this.replayData.players;
-      const cx = w/2, cy = h/2, radius = Math.min(w, h)/3;
-
-      players.forEach((p, i) => {
-        const angle = (i / players.length) * Math.PI * 2 - Math.PI / 2;
-        const x = cx + Math.cos(angle) * radius;
-        const y = cy + Math.sin(angle) * radius;
-        this.drawPlayer(ctx, x, y, p);
-      });
+    async startLiveFromSettings() {
+        this.showSettings = false;
+        await this.startLiveGame();
     },
 
-    drawPlayer(ctx, x, y, player) {
-      const size = 28;
-      const isNight = this.scene === 'night';
-      const roleColors = { werewolf:'#d96f65', seer:'#82a9d9', witch:'#b392d6', villager:'#7bc77e' };
+    async startLiveGame() {
+        this.stopLiveWatch();
+        this.gameError = null;
+        this.replayData = null;
+        this.msgFilter = 'all';
+        this.timelineEvents = [];
+        this.timelineCursor = 0;
+        this.timelinePlaying = false;
 
-      // 身体
-      ctx.fillStyle = isNight ? '#4a5568' : '#d4a574';
-      ctx.fillRect(x - size/2, y - size/2, size, size);
+        try {
+            const res = await fetch('/api/games/live', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({
+                    mode: this.settings.mode,
+                    seed: this.settings.seedMode==='fixed'?this.settings.baseSeed:null,
+                    memory_enabled: this.settings.memoryEnabled,
+                    api_key: this.settings.apiKey || undefined,
+                    base_url: this.settings.baseUrl || undefined,
+                    model: this.settings.model || undefined,
+                }),
+            });
+            if (!res.ok) { const err = await res.json(); throw new Error(err.error); }
+            const data = await res.json();
+            this.liveGameId = data.game_id;
+            this.liveMode = true;
+            this.runMode = this.settings.mode;
+            this.liveState = initGameState();
+            this.lastEventId = null;
+            this.connectLiveStream(data.game_id);
+            this.startLivePoll(data.game_id);
+            this.startRenderLoop();
+        } catch(e) { alert('启动实时观战失败: '+e.message); }
+    },
 
-      // 头
-      ctx.fillStyle = isNight ? '#6b7280' : '#e8d5b7';
-      ctx.beginPath(); ctx.arc(x, y - size/2 - 10, 9, 0, Math.PI*2); ctx.fill();
+    applyLiveEvent(evt) {
+        if (!evt || !evt.event_id) return false;
+        if (this.timelineEvents.some(e => e.event_id === evt.event_id)) return false;
+        this.lastEventId = evt.event_id;
+        this.timelineEvents.push(evt);
+        this.liveState = reduceEvent(this.liveState, evt);
+        return true;
+    },
 
-      // 狼耳朵
-      if (isNight && player.role === 'werewolf') {
-        ctx.fillStyle = '#d96f65';
-        ctx.beginPath(); ctx.arc(x-7, y-size/2-17, 5, 0, Math.PI*2); ctx.fill();
-        ctx.beginPath(); ctx.arc(x+7, y-size/2-17, 5, 0, Math.PI*2); ctx.fill();
-      }
+    async syncLiveEventsFromFile(gameId) {
+        if (!this.liveMode || !gameId) return;
+        try {
+            const res = await fetch(`/api/games/${gameId}/events`, { cache: 'no-store' });
+            if (!res.ok) return;
+            const data = await res.json();
+            const events = data.events || [];
+            let changed = false;
+            for (const evt of events) {
+                changed = this.applyLiveEvent(evt) || changed;
+            }
+            if (changed) this.$nextTick(() => this.scrollToBottom());
+            if (events.some(e => e.type === 'game_ended') && this.connectionStatus !== 'connected') {
+                this.connectionStatus = 'ended';
+            }
+        } catch (_) {}
+    },
 
-      // 编号
-      ctx.fillStyle = '#0a0e27';
-      ctx.font = 'bold 11px sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(player.id, x, y);
+    startLivePoll(gameId) {
+        this.stopLivePoll();
+        this.livePollTimer = setInterval(() => this.syncLiveEventsFromFile(gameId), 1000);
+        this.syncLiveEventsFromFile(gameId);
+    },
 
-      // 角色色环
-      ctx.strokeStyle = roleColors[player.role] || '#aaa89d';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(x, y, size/2 + 4, 0, Math.PI*2); ctx.stroke();
+    stopLivePoll() {
+        if (this.livePollTimer) {
+            clearInterval(this.livePollTimer);
+            this.livePollTimer = null;
+        }
+    },
 
-      // 死亡 X
-      if (!player.alive) {
-        ctx.strokeStyle = '#d96f65'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(x-size/2, y-size/2); ctx.lineTo(x+size/2, y+size/2); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x+size/2, y-size/2); ctx.lineTo(x-size/2, y+size/2); ctx.stroke();
-      }
+    connectLiveStream(gameId) {
+        this.connectionStatus = 'connecting';
+        let url = `/api/games/${gameId}/stream`;
+        if (this.lastEventId) {
+            url += `?last_event_id=${encodeURIComponent(this.lastEventId)}`;
+        }
+        const es = new EventSource(url);
+        this.eventSource = es;
 
-      // 高亮选中玩家
-      if (this.selectedPlayerId === player.id) {
-        ctx.strokeStyle = '#d7b969'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(x, y, size/2 + 8, 0, Math.PI*2); ctx.stroke();
-      }
+        es.onopen = () => {
+            this.connectionStatus = 'connected';
+            this.reconnectAttempts = 0;
+        };
 
-      // 人格标签（底部）
-      const persName = this.personalityNames[player.personality] || player.personality || '?';
-      ctx.fillStyle = this.scene === 'night' ? '#aaa89d' : '#5a4a3a';
-      ctx.font = '9px sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-      ctx.fillText(persName, x, y + size/2 + 6);
+        es.onmessage = (e) => {
+            const evt = JSON.parse(e.data);
+            this.applyLiveEvent(evt);
+        };
 
-      // 角色标签（人格下方）
-      ctx.fillStyle = roleColors[player.role] || '#aaa89d';
-      ctx.font = 'bold 8px sans-serif';
-      ctx.fillText(this.roleNames[player.role] || '?', x, y + size/2 + 18);
+        es.addEventListener('game_error', (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                console.error('游戏运行错误:', data.error);
+                this.gameError = data.error;
+            } catch (_) {}
+        });
+
+        es.addEventListener('game_end', async () => {
+            es.close();
+            this.eventSource = null;
+            this.stopLivePoll();
+            this.connectionStatus = 'ended';
+            this.liveMode = false;
+            // 加载 replay 数据（最多重试 5 次，处理文件 flush 延迟）
+            for (let attempt = 0; attempt < 5; attempt++) {
+                try {
+                    const res = await fetch(`/api/games/${gameId}/replay`);
+                    if (res.ok) {
+                        this.replayData = await res.json();
+                        this.selectedGameId = gameId;
+                        await this.loadSavedGames();
+                        break;
+                    }
+                } catch (e) { console.warn('加载回放数据失败:', e); }
+                if (!this.replayData) await new Promise(r => setTimeout(r, 1000));
+            }
+            this.timelineCursor = 0;
+            this.replayState = initGameState();
+            this.drawBoard(0);
+        });
+
+        es.onerror = () => {
+            es.close();
+            this.eventSource = null;
+            this.connectionStatus = 'disconnected';
+            this.reconnectAttempts++;
+            if (this.liveMode) {
+                const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
+                this.connectionStatus = 'connecting';
+                setTimeout(() => {
+                    if (this.liveMode) this.connectLiveStream(gameId);
+                }, delay);
+            }
+        };
+    },
+
+    stopLiveWatch() {
+        if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
+        this.stopLivePoll();
+        this.liveMode = false;
+        this.liveGameId = null;
+        this.connectionStatus = 'disconnected';
+        this.reconnectAttempts = 0;
+        this.stopRenderLoop();
+    },
+
+    // ============ Pixi / v2.2 compat canvas click ============
+
+    onCanvasClick(e) {
+        const canvas = this.$refs.gameCanvas;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const players = this.liveMode ? this.liveState.players : this.replayState.players;
+        if (!players.length) return;
+        const cx = canvas.width/2, cy = canvas.height/2;
+        const radius = Math.min(canvas.width, canvas.height)/3;
+        let closest = null, closestDist = Infinity;
+        players.forEach((p, i) => {
+            const angle = (i/players.length)*Math.PI*2 - Math.PI/2;
+            const px = cx + Math.cos(angle)*radius;
+            const py = cy + Math.sin(angle)*radius;
+            const d = Math.hypot(mx-px, my-py);
+            if (d < 30 && d < closestDist) { closest = p; closestDist = d; }
+        });
+        this.selectedPlayerId = closest ? closest.id : null;
+        this.drawBoard(performance.now());
+    },
+
+    // ============ Pixel Sprite Rendering ============
+
+    drawPixelPlayer(ctx, x, y, player, timestamp) {
+        const roleName = (player.role||'villager').toLowerCase();
+        const template = ROLE_SPRITES[roleName] || ROLE_SPRITES.villager;
+        const hairColor = player.hair_color || HAIR_COLORS[(player.id-1)%9];
+        const scale = 2;
+        const spriteW = Math.max(...template.pixels.map(r=>r.length));
+        const spriteH = template.pixels.length;
+        let ox = x - (spriteW*scale)/2;
+        let oy = y - (spriteH*scale)/2;
+
+        if (!player.alive) {
+            ctx.globalAlpha = 0.4;
+            ctx.filter = 'grayscale(100%)';
+            oy += Math.sin(timestamp/1000)*2;
+        }
+
+        const speakerId = this.liveMode ? this.liveState.current_speaker : this.replayState.current_speaker;
+        if (speakerId === player.id) {
+            const glow = 0.5 + 0.5*Math.sin(timestamp/500);
+            ctx.shadowColor = '#d7b969'; ctx.shadowBlur = 8*glow;
+        }
+
+        for (let row=0; row<spriteH; row++) {
+            const rowData = template.pixels[row];
+            const rowOffset = Math.floor((spriteW - rowData.length)/2);
+            for (let col=0; col<rowData.length; col++) {
+                const token = rowData[col];
+                let color = null;
+                switch(token) {
+                    case 'H': color = hairColor; break;
+                    case 'S': color = '#e8d5b7'; break;
+                    case 'E': color = template.eye_color; break;
+                    case 'M': color = '#c0392b'; break;
+                    case 'B': color = template.body_color; break;
+                    case 'A': color = template.accessory_color; break;
+                    case 'L': color = '#2d3748'; break;
+                    case '.': continue;
+                }
+                if (color) {
+                    ctx.fillStyle = color;
+                    ctx.fillRect(ox+(col+rowOffset)*scale, oy+row*scale, scale, scale);
+                }
+            }
+        }
+
+        ctx.globalAlpha = 1.0;
+        ctx.filter = 'none';
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${player.id}号`, x, oy+spriteH*scale+12);
+    },
+
+    drawBoard(timestamp) {
+        const canvas = this.$refs.gameCanvas;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const w=canvas.width, h=canvas.height;
+
+        const isNight = this.replayData
+            ? ['NIGHT','WOLF_DEN'].includes((this.replayState||{}).phase)
+            : ['NIGHT','WOLF_DEN'].includes((this.liveState||{}).phase);
+
+        ctx.fillStyle = isNight ? '#1a1a2e' : '#e8d5b7';
+        ctx.fillRect(0,0,w,h);
+
+        const players = this.liveMode ? this.liveState.players : this.replayState.players;
+        if (!players.length) return;
+
+        const cx=w/2, cy=h/2, radius=Math.min(w,h)/3;
+
+        if (isNight) {
+            ctx.fillStyle = '#f7dc6f';
+            ctx.beginPath(); ctx.arc(w-60, 50, 20, 0, Math.PI*2); ctx.fill();
+        }
+
+        players.forEach((p,i) => {
+            const angle = (i/players.length)*Math.PI*2 - Math.PI/2;
+            const px = cx + Math.cos(angle)*radius;
+            const py = cy + Math.sin(angle)*radius;
+            this.drawPixelPlayer(ctx, px, py, p, timestamp);
+        });
+
+        if (this.selectedPlayerId && !this.liveMode) {
+            const sp = players.find(p=>p.id===this.selectedPlayerId);
+            if (sp) {
+                const si = players.indexOf(sp);
+                const angle = (si/players.length)*Math.PI*2 - Math.PI/2;
+                const sx = cx + Math.cos(angle)*radius;
+                const sy = cy + Math.sin(angle)*radius;
+                ctx.strokeStyle = '#d7b969'; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.arc(sx, sy, 30, 0, Math.PI*2); ctx.stroke();
+            }
+        }
+    },
+
+    startRenderLoop() {
+        const render = (ts) => {
+            if (!this.liveMode && this.timelineEvents.length === 0) return;
+            this.drawBoard(ts);
+            this.animFrameId = requestAnimationFrame(render);
+        };
+        this.animFrameId = requestAnimationFrame(render);
+    },
+
+    stopRenderLoop() {
+        if (this.animFrameId) { cancelAnimationFrame(this.animFrameId); this.animFrameId = null; }
+    },
+
+    // ============ Timeline Playback ============
+
+    togglePlay() {
+        if (this.timelinePlaying) { this.timelinePause(); }
+        else { this.timelinePlay(); }
+    },
+
+    timelinePlay() {
+        if (this.timelinePlaying) return;
+        if (this.timelineCursor >= this.timelineEvents.length) {
+            this.timelineCursor = 0;
+            this.replayState = initGameState();
+        }
+        this.timelinePlaying = true;
+        this.scheduleNextEvent();
+    },
+
+    timelinePause() {
+        this.timelinePlaying = false;
+        this.clearPendingTimer();
+    },
+
+    clearPendingTimer() {
+        if (this.timelineTimer !== null) {
+            clearTimeout(this.timelineTimer);
+            this.timelineTimer = null;
+        }
+    },
+
+    scheduleNextEvent() {
+        if (!this.timelinePlaying) return;
+        if (this.timelineCursor >= this.timelineEvents.length) {
+            this.timelinePause();
+            return;
+        }
+        this.clearPendingTimer();
+        const delay = this.getEventDelay() / this.timelineSpeed;
+        this.timelineTimer = setTimeout(() => {
+            this.timelineStepForward();
+            this.scheduleNextEvent();
+        }, delay);
+    },
+
+    getEventDelay() {
+        const evt = this.timelineEvents[this.timelineCursor];
+        if (!evt) return 1000;
+        switch (evt.type) {
+            case 'game_started': return 2000;
+            case 'role_assigned': return 500;
+            case 'phase_started': return 1500;
+            case 'progress': return 300;
+            case 'message_posted': return 2500;
+            case 'vote_cast': return 800;
+            case 'vote_resolved': return 2000;
+            case 'player_eliminated': return 2000;
+            case 'game_ended': return 3000;
+            default: return 1000;
+        }
+    },
+
+    timelineStep(direction) {
+        if (direction > 0) { this.timelineStepForward(); }
+        else { this.timelineStepBackward(); }
+    },
+
+    timelineStepForward() {
+        if (this.timelineCursor >= this.timelineEvents.length) return;
+        this.replayState = reduceEvent(this.replayState, this.timelineEvents[this.timelineCursor]);
+        this.timelineCursor++;
+        this.drawBoard(performance.now());
+    },
+
+    timelineStepBackward() {
+        if (this.timelineCursor <= 0) return;
+        this.timelineCursor--;
+        this.rebuildStateAt(this.timelineCursor);
+        this.drawBoard(performance.now());
+    },
+
+    rebuildStateAt(targetIndex) {
+        let state = initGameState();
+        for (let i=0; i<targetIndex; i++) {
+            state = reduceEvent(state, this.timelineEvents[i]);
+        }
+        this.replayState = state;
+    },
+
+    timelineSeek(targetIndex) {
+        if (this.timelineEvents.length === 0) return;
+        const maxIdx = this.timelineEvents.length;
+        targetIndex = Math.max(0, Math.min(targetIndex, maxIdx));
+        this.clearPendingTimer();
+        this.timelineCursor = targetIndex;
+        this.rebuildStateAt(targetIndex);
+        this.drawBoard(performance.now());
+        if (this.timelinePlaying) {
+            this.scheduleNextEvent();
+        }
+    },
+
+    setSpeed(s) {
+        this.timelineSpeed = s;
+        if (this.timelinePlaying) {
+            this.clearPendingTimer();
+            this.scheduleNextEvent();
+        }
+    },
+
+    formatTime(cursor) {
+        let total = 0;
+        for (let i=0; i<cursor && i<this.timelineEvents.length; i++) {
+            const e = this.timelineEvents[i];
+            switch (e.type) {
+                case 'game_started': total+=2000; break;
+                case 'role_assigned': total+=500; break;
+                case 'phase_started': total+=1500; break;
+                case 'progress': total+=300; break;
+                case 'message_posted': total+=2500; break;
+                case 'vote_cast': total+=800; break;
+                case 'vote_resolved': total+=2000; break;
+                case 'player_eliminated': total+=2000; break;
+                case 'game_ended': total+=3000; break;
+                default: total+=1000;
+            }
+        }
+        const sec = Math.floor(total/1000);
+        return `${String(Math.floor(sec/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}`;
+    },
+
+    scrollToBottom() {
+        const panel = this.$refs.msgPanel;
+        if (panel) panel.scrollTop = panel.scrollHeight;
+    },
+
+    // ============ Progress Bar Drag ============
+
+    onProgressBarClick(e) {
+        if (this.dragging) return;
+        const rect = e.target.getBoundingClientRect();
+        const ratio = (e.clientX - rect.left) / rect.width;
+        this.timelineSeek(Math.round(ratio * (this.timelineEvents.length||1)));
+    },
+
+    onDragStart(e) {
+        this.dragging = true;
+        this.wasPlayingBeforeDrag = this.timelinePlaying;
+        this.clearPendingTimer();
+        this.progressBarRect = this.$refs.progressBar.getBoundingClientRect();
+        document.addEventListener('mousemove', this.onDragMove);
+        document.addEventListener('mouseup', this.onDragEnd);
+    },
+
+    onDragMove(e) {
+        if (!this.dragging || !this.progressBarRect) return;
+        const ratio = (e.clientX - this.progressBarRect.left) / this.progressBarRect.width;
+        const targetIndex = Math.round(ratio * (this.timelineEvents.length||1));
+        if (this.timelineEvents.length === 0) return;
+        this.timelineCursor = Math.max(0, Math.min(targetIndex, this.timelineEvents.length));
+        this.rebuildStateAt(this.timelineCursor);
+        this.drawBoard(performance.now());
+    },
+
+    onDragEnd() {
+        this.dragging = false;
+        document.removeEventListener('mousemove', this.onDragMove);
+        document.removeEventListener('mouseup', this.onDragEnd);
+        if (this.wasPlayingBeforeDrag) {
+            this.timelinePlaying = true;
+            this.scheduleNextEvent();
+        }
+    },
+
+    // ============ Keyboard ============
+
+    onKeyDown(e) {
+        if (e.target.tagName === 'INPUT') return;
+        if (this.timelineEvents.length === 0 && !this.liveMode) return;
+        switch (e.key) {
+            case ' ': e.preventDefault(); this.togglePlay(); break;
+            case 'ArrowLeft': e.preventDefault(); this.timelineStep(-1); break;
+            case 'ArrowRight': e.preventDefault(); this.timelineStep(1); break;
+            case '1': this.setSpeed(1); break;
+            case '2': this.setSpeed(2); break;
+            case '3': this.setSpeed(4); break;
+            case '4': this.setSpeed(8); break;
+            case 'Home': e.preventDefault(); this.timelineSeek(0); break;
+            case 'End': e.preventDefault(); this.timelineSeek(this.timelineEvents.length); break;
+        }
     },
   },
+
   watch: {
-    scene() { this.$nextTick(() => this.drawBoard()); },
-    currentRound() { this.$nextTick(() => this.drawBoard()); },
+    'replayData.rounds': {
+        handler(rounds) { if (rounds && rounds.length>0) this.currentRound = rounds[0].round; },
+    },
+    timelineCursor() { this.$nextTick(() => this.scrollToBottom()); },
+    'liveState.messages.length'() { this.$nextTick(() => this.scrollToBottom()); },
+    'settings.apiKey'() { this.saveSettings(); },
+    'settings.baseUrl'() { this.saveSettings(); },
+    'settings.model'() { this.saveSettings(); },
+    'settings.mode'() { this.saveSettings(); },
   },
+
   mounted() {
+    // 从 localStorage 恢复 API 设置
+    try {
+        const saved = JSON.parse(localStorage.getItem('wolf-agent-settings'));
+        if (saved) Object.assign(this.settings, saved);
+    } catch(_) {}
     this.canvasW = window.innerWidth - 260 - 340;
-    this.canvasH = window.innerHeight - 60;
+    this.canvasH = window.innerHeight - 80;
     this.loadSavedGames();
     window.addEventListener('resize', () => {
-      this.canvasW = window.innerWidth - 260 - 340;
-      this.canvasH = window.innerHeight - 60;
-      if (this.replayData) this.drawBoard();
+        this.canvasW = window.innerWidth - 260 - 340;
+        this.canvasH = window.innerHeight - 80;
+        if (this.replayData || this.liveMode) this.drawBoard(performance.now());
     });
+    document.addEventListener('keydown', this.onKeyDown);
+    this.startRenderLoop();
   },
-  beforeUnmount() { if (this.pollTimer) clearTimeout(this.pollTimer); },
+
+  beforeUnmount() {
+    this.stopLiveWatch();
+    this.clearPendingTimer();
+    this.stopRenderLoop();
+    if (this.pollTimer) clearTimeout(this.pollTimer);
+    document.removeEventListener('keydown', this.onKeyDown);
+  },
 }).mount('#app');
 </script>
 </body>

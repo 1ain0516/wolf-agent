@@ -16,12 +16,15 @@ class LLMClient:
     """OpenAI-compatible LLM client with retry logic."""
 
     def __init__(self):
-        self.api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+        self.api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
         base_url = os.environ.get("DEEPSEEK_BASE_URL", DEFAULT_BASE_URL)
-        self.base_url = base_url.rstrip("/")
-        self.model = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+        self.base_url = base_url.strip().rstrip("/")
+        self.model = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat").strip()
 
     def _call(self, messages: list[dict], temperature: float, max_tokens: int) -> str:
+        if not self.api_key:
+            raise ValueError("Real mode requires DEEPSEEK_API_KEY or an API Key in Web settings.")
+
         last_exc = None
         for attempt in range(MAX_RETRIES):
             try:
